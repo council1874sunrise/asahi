@@ -217,7 +217,7 @@ export default function Home() {
     if (remaining <= 0) return alert("満席です。");
     if (shop.isPaused) return alert("停止中です。");
     
-    const maxPeople = shop.groupLimi || 10;
+    const maxPeople = shop.groupLimit || 10;
 
     setPeopleCount(1);
     setDraftBooking({ time, remaining, mode: "slot", maxPeople });
@@ -228,7 +228,7 @@ export default function Home() {
     if (activeTickets.some(t => t.shopId === shop.id)) return alert("既にこの店に並んでいます。");
     if (shop.isPaused) return alert("停止中です。");
 
-    const maxPeople = shop.capacity || 10;
+    const maxPeople = shop.groupLimit || 10;
 
     setPeopleCount(1);
     setDraftBooking({ time: "順番待ち", remaining: 999, mode: "queue", maxPeople });
