@@ -4,12 +4,12 @@ import { getAuth } from "firebase/auth";
 
 // ↓↓ ここにあなたのFirebase設定を貼り付けてください ↓↓
 const firebaseConfig = {
-  apiKey: "AIzaSyChrDtt8PcbmgbNeugz3p-7wSCd1bJNG9g",
-  authDomain: "shun-fes.firebaseapp.com",
-  projectId: "shun-fes",
-  storageBucket: "shun-fes.firebasestorage.app",
-  messagingSenderId: "613973868362",
-  appId: "1:613973868362:web:7c1c6fb5a46e468e43cbb3"
+  apiKey: "AIzaSyDHg5b8fdTjbvUwjyyj2V85gCilPTlb8aQ",
+  authDomain: "asahi-f7189.firebaseapp.com",
+  projectId: "asahi-f7189",
+  storageBucket: "asahi-f7189.firebasestorage.app",
+  messagingSenderId: "838314272930",
+  appId: "1:838314272930:web:d04153d9fe6f3aa152cffb"
 };
 
 // ↑↑ ここまで ↑↑
