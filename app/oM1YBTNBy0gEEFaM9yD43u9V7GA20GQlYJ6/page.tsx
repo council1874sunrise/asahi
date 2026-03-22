@@ -54,6 +54,7 @@ export default function AdminPage() {
   const [releaseBeforeTime, setReleaseBeforeTime] = useState("");
 
   // ★追加: ゲスト追加用ステート
+  const [isAddGuestModalOpen, setIsAddGuestModalOpen] = useState(false);
   const [guestTime, setGuestTime] = useState("");
   const [guestName, setGuestName] = useState("");
   const [guestCount, setGuestCount] = useState(1);
@@ -210,12 +211,27 @@ export default function AdminPage() {
     setExpandedShopId(null);
   };
 
+  // --- ★追加: ゲストID採番ロジック ---
+  const generateGuestId = (shop: any) => {
+      let maxNum = 0;
+      const allUsers = shop.isQueueMode ? (shop.queue || []) : (shop.reservations || []);
+      
+      allUsers.forEach((user: any) => {
+          if (user.userId && /^G\d{5}$/.test(user.userId)) {
+              const num = parseInt(user.userId.substring(1), 10);
+              if (num > maxNum) maxNum = num;
+          }
+      });
+      return `G${(maxNum + 1).toString().padStart(5, '0')}`;
+  };
+
   // --- ★追加: ゲスト（手動予約・待機列）追加処理 ---
   const handleAddGuest = async (shop: any) => {
     if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
     if (!guestName) return alert("ゲスト名を入力してください");
 
-    const guestUserId = "GUEST-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    // 採番ルール適用
+    const guestUserId = generateGuestId(shop);
 
     if (!shop.isQueueMode) {
         // 時間予約制の場合
@@ -256,10 +272,11 @@ export default function AdminPage() {
         });
     }
 
-    alert("ゲスト枠を追加しました");
+    alert(`ゲスト枠を追加しました (ID: ${guestUserId})`);
     setGuestName("");
     setGuestTime("");
     setGuestCount(1);
+    setIsAddGuestModalOpen(false); // モーダルを閉じる
   };
 
   // --- 予約操作関連 (時間予約制用) ---
@@ -487,8 +504,7 @@ export default function AdminPage() {
             <div className="animate-fade-in">
                 <button onClick={() => { setExpandedShopId(null); setIsEditing(false); }} className="mb-4 flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
                     ← 会場一覧に戻る
-                  
-</button>
+                </button>
 
                 <div className="bg-gray-800 rounded-xl border border-gray-600 overflow-hidden shadow-xl">
                     {/* タイトルバー */}
@@ -545,7 +561,71 @@ export default function AdminPage() {
                                 ＋ ゲスト追加
                             </button>
                         </div>
-
+                        
+                        {/* ★追加: ゲスト追加用モーダルUI */}
+                        {isAddGuestModalOpen && (
+                            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 animate-fade-in">
+                                <div className="bg-gray-800 p-6 rounded-xl border border-gray-600 w-full max-w-md shadow-2xl">
+                                    <h3 className="text-xl font-bold mb-4 text-white flex items-center gap-2">
+                                        <span>🎟️</span> ゲスト枠の追加
+                                    </h3>
+                                    
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs text-gray-400 mb-1 block">ゲスト名</label>
+                                            <input 
+                                                className="w-full bg-gray-700 p-2 rounded text-white border border-gray-600 focus:border-emerald-500 outline-none" 
+                                                value={guestName} 
+                                                onChange={e => setGuestName(e.target.value)} 
+                                                placeholder="例: 山田太郎" 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-400 mb-1 block">人数</label>
+                                            <input 
+                                                type="number" 
+                                                min="1" 
+                                                max={targetShop.groupLimit} 
+                                                className="w-full bg-gray-700 p-2 rounded text-white border border-gray-600 focus:border-emerald-500 outline-none" 
+                                                value={guestCount} 
+                                                onChange={e => setGuestCount(Number(e.target.value))} 
+                                            />
+                                        </div>
+                                        {!targetShop.isQueueMode && (
+                                            <div>
+                                                <label className="text-xs text-gray-400 mb-1 block">予約時間枠</label>
+                                                <select 
+                                                    className="w-full bg-gray-700 p-2 rounded text-white border border-gray-600 focus:border-emerald-500 outline-none" 
+                                                    value={guestTime} 
+                                                    onChange={e => setGuestTime(e.target.value)}
+                                                >
+                                                    <option value="">時間を選択してください</option>
+                                                    {Object.keys(targetShop.slots || {}).sort().map(time => (
+                                                        <option key={time} value={time} disabled={targetShop.slots[time] <= 0}>
+                                                            {time} (残り: {targetShop.slots[time]}枠)
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="flex justify-end gap-2 mt-6 border-t border-gray-700 pt-4">
+                                        <button 
+                                            onClick={() => setIsAddGuestModalOpen(false)} 
+                                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded text-sm text-white font-medium transition"
+                                        >
+                                            キャンセル
+                                        </button>
+                                        <button 
+                                            onClick={() => handleAddGuest(targetShop)} 
+                                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm text-white font-bold transition"
+                                        >
+                                            追加する
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         {/* ★★★ 運用モードによる分岐 ★★★ */}
                         {targetShop.isQueueMode ? (
                             /* --- A. 順番待ち制 (Queue List) --- */
