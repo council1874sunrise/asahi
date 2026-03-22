@@ -1,7 +1,7 @@
 // #呼び出し番号表示画面 (app/signage/page.tsx)
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { db, auth } from "../../firebase";
+import { db, auth } from "../../../firebase
 import { collection, onSnapshot, doc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 
