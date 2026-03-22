@@ -55,6 +55,9 @@ export default function SuperAdminPage() {
   // 現在時刻管理（解放判定の再計算用）
   const [now, setNow] = useState(new Date());
 
+  // ★ゲスト追加用ステート
+  const [guestTime, setGuestTime] = useState("");
+
   useEffect(() => {
     signInAnonymously(auth).catch((e) => console.error(e));
 
@@ -284,6 +287,58 @@ export default function SuperAdminPage() {
     }
   };
 
+  // ★ゲスト枠追加ロジック
+  const generateGuestId = (shop: any) => {
+      let maxNum = 0;
+      const checkId = (id: string) => {
+          if (id && id.startsWith('G')) {
+              const num = parseInt(id.substring(1), 10);
+              if (!isNaN(num) && num > maxNum) maxNum = num;
+          }
+      };
+      (shop.queue || []).forEach((q: any) => checkId(q.userId));
+      (shop.reservations || []).forEach((r: any) => checkId(r.userId));
+      return `G${String(maxNum + 1).padStart(5, '0')}`;
+  };
+
+  const handleAddGuestQueue = async (shop: any) => {
+      if (!confirm("列の最後尾にゲスト枠を追加しますか？")) return;
+      const guestId = generateGuestId(shop);
+      const newTicket = {
+          userId: guestId,
+          timestamp: Date.now(),
+          status: 'waiting',
+          isGuest: true
+      };
+      await updateDoc(doc(db, "attractions", shop.id), {
+          queue: [...(shop.queue || []), newTicket]
+      });
+      alert(`ゲスト枠 ${guestId} を追加しました`);
+  };
+
+  const handleAddGuestReservation = async (shop: any, time: string) => {
+      if (!time) return alert("時間を選択してください");
+      if ((shop.slots[time] || 0) >= shop.capacity) return alert("この枠は満員です");
+      if (!confirm(`${time} の枠にゲストを追加しますか？`)) return;
+
+      const guestId = generateGuestId(shop);
+      const newReservation = {
+          userId: guestId,
+          time: time,
+          timestamp: Date.now(),
+          status: 'reserved',
+          isGuest: true
+      };
+      const updatedSlots = { ...shop.slots, [time]: (shop.slots[time] || 0) + 1 };
+      
+      await updateDoc(doc(db, "attractions", shop.id), {
+          reservations: [...(shop.reservations || []), newReservation],
+          slots: updatedSlots
+      });
+      setGuestTime(""); // プルダウンをリセット
+      alert(`ゲスト枠 ${guestId} を追加しました`);
+  };
+
   // 表示ヘルパー
   const targetShop = attractions.find(s => s.id === expandedShopId);
 
@@ -346,7 +401,7 @@ export default function SuperAdminPage() {
                       <div>
                         <label className="text-xs text-gray-400 block mb-1">会場ID (3文字)</label>
                         <input className={`w-full p-2 rounded text-white bg-gray-700 ${isEditing && manualId !== originalId ? 'ring-2 ring-yellow-500' : ''}`}
-                             placeholder="例: 3B" maxLength={3} value={manualId} onChange={e => setManualId(e.target.value)} />
+                              placeholder="例: 3B" maxLength={3} value={manualId} onChange={e => setManualId(e.target.value)} />
                       </div>
                       <div>
                         <label className="text-xs text-gray-400 block mb-1">会場名</label>
@@ -544,6 +599,38 @@ export default function SuperAdminPage() {
                                 {targetShop.description}
                             </div>
                         )}
+
+                        {/* ★追加: ゲスト枠追加UIパネル */}
+                        <div className="bg-gray-800 p-4 rounded-lg border border-gray-600 mt-4 shadow-inner">
+                            <h3 className="text-sm font-bold text-gray-300 mb-3 flex items-center gap-2">🎟️ ゲスト枠（スマホ非保持者）を追加</h3>
+                            {targetShop.isQueueMode ? (
+                                <button onClick={() => handleAddGuestQueue(targetShop)} className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow transition flex items-center gap-2">
+                                    🚶‍♂️ 列の最後尾に追加する
+                                </button>
+                            ) : (
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <select 
+                                        className="bg-gray-700 text-white p-2 rounded border border-gray-600 text-sm outline-none"
+                                        value={guestTime}
+                                        onChange={(e) => setGuestTime(e.target.value)}
+                                    >
+                                        <option value="">予約時間を選択...</option>
+                                        {Object.keys(targetShop.slots || {}).sort().map(time => {
+                                            const count = targetShop.slots[time] || 0;
+                                            const isFull = count >= targetShop.capacity;
+                                            return (
+                                                <option key={time} value={time} disabled={isFull}>
+                                                    {time} ({count}/{targetShop.capacity}組) {isFull ? '満員' : ''}
+                                                </option>
+                                            )
+                                        })}
+                                    </select>
+                                    <button onClick={() => handleAddGuestReservation(targetShop, guestTime)} className="bg-green-700 hover:bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow transition disabled:opacity-50 disabled:cursor-not-allowed" disabled={!guestTime}>
+                                        📅 ゲスト予約を確定
+                                    </button>
+                                </div>
+                            )}
+                        </div>
 
                         {/* 条件分岐：予約制 or 順番待ち制 */}
 
