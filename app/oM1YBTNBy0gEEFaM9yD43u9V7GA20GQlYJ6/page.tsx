@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { db, auth } from "../../firebase"; 
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
-
+ 
 // GoogleドライブのURLを自動変換する関数
 const convertGoogleDriveLink = (url: string) => {
   if (!url) return "";
@@ -19,20 +19,49 @@ const convertGoogleDriveLink = (url: string) => {
     return url;
   }
 };
-
+ 
+// ★追加: ゲストIDを採番する関数
+const generateGuestId = (shop: any): string => {
+  const allIds: string[] = [];
+  
+  // reservations から G始まりのIDを収集
+  if (shop.reservations) {
+    shop.reservations.forEach((r: any) => {
+      if (r.userId && r.userId.startsWith("G")) allIds.push(r.userId);
+    });
+  }
+  // queue から G始まりのIDを収集
+  if (shop.queue) {
+    shop.queue.forEach((q: any) => {
+      if (q.userId && q.userId.startsWith("G")) allIds.push(q.userId);
+    });
+  }
+ 
+  // 最大の番号を探す
+  let maxNum = 0;
+  allIds.forEach(id => {
+    const num = parseInt(id.slice(1), 10);
+    if (!isNaN(num) && num > maxNum) maxNum = num;
+  });
+ 
+  // G + 5桁の連番
+  const nextNum = maxNum + 1;
+  return "G" + String(nextNum).padStart(5, "0");
+};
+ 
 export default function AdminPage() {
   const [attractions, setAttractions] = useState<any[]>([]);
   
   // 自分のID（権限チェック・表示用）
   const [myUserId, setMyUserId] = useState("");
-
+ 
   // アカウント停止（BAN）状態管理
   const [isGlobalBanned, setIsGlobalBanned] = useState(false);
-
+ 
   // 表示モード管理
   const [expandedShopId, setExpandedShopId] = useState<string | null>(null); // 現在開いている会場ID
   const [isEditing, setIsEditing] = useState(false); // 編集モードか
-
+ 
   // 編集用フォームステート
   const [manualId, setManualId] = useState("");
   const [newName, setNewName] = useState("");
@@ -47,16 +76,21 @@ export default function AdminPage() {
   const [duration, setDuration] = useState(20);
   const [capacity, setCapacity] = useState(3);
   const [isPaused, setIsPaused] = useState(false);
-
+ 
   // ★追加: 運用モード（false: 時間予約制, true: 順番待ち制）
   const [isQueueMode, setIsQueueMode] = useState(false);
   
   // ★追加: 事前解放設定 (例: "01:30" = 1時間30分前に解放)
   const [releaseBeforeTime, setReleaseBeforeTime] = useState("");
-
+ 
   // 検索用
   const [searchUserId, setSearchUserId] = useState("");
-
+ 
+  // ★追加: ゲスト枠追加用モーダル
+  const [guestModalShopId, setGuestModalShopId] = useState<string | null>(null);
+  const [guestSelectedTime, setGuestSelectedTime] = useState("");
+  const [guestCount, setGuestCount] = useState(1);
+ 
   useEffect(() => {
     signInAnonymously(auth).catch((e) => console.error(e));
     
@@ -75,12 +109,12 @@ export default function AdminPage() {
     
     setMyUserId(stored);
     // ------------------------------------------
-
+ 
     // 1. 会場データの監視
     const unsubAttractions = onSnapshot(collection(db, "attractions"), (snapshot) => {
       setAttractions(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-
+ 
     // 2. 自分のユーザーBAN状態をリアルタイム監視
     const unsubUser = onSnapshot(doc(db, "users", stored), (docSnap) => {
         if (docSnap.exists()) {
@@ -90,13 +124,13 @@ export default function AdminPage() {
             setIsGlobalBanned(false);
         }
     });
-
+ 
     return () => {
         unsubAttractions();
         unsubUser();
     };
   }, []);
-
+ 
   // --- 強制BAN画面 ---
   if (isGlobalBanned) {
       return (
@@ -113,14 +147,14 @@ export default function AdminPage() {
           </div>
       );
   }
-
+ 
   // --- 権限チェックヘルパー関数 ---
   
   // 1. ブラックリスト判定 (trueならBANされている)
   const isUserBlacklisted = (shop: any) => {
       return shop?.adminBannedUsers?.includes(myUserId);
   };
-
+ 
   // 2. ホワイトリスト判定 (trueなら許可されていない)
   const isUserNotWhitelisted = (shop: any) => {
       // ホワイトリストモード(isRestricted)かつ、許可リスト(allowedUsers)に含まれていない場合
@@ -129,7 +163,7 @@ export default function AdminPage() {
       }
       return false;
   };
-
+ 
   // 3. 管理者限定モード判定 (trueなら許可されていない)
   const isAdminRestrictedAndNotAllowed = (shop: any) => {
       if (shop.isAdminRestricted) {
@@ -137,39 +171,39 @@ export default function AdminPage() {
       }
       return false;
   };
-
+ 
   // --- 権限チェック付き: 会場展開 ---
   const handleExpandShop = (shopId: string) => {
       const shop = attractions.find(s => s.id === shopId);
       if (!shop) return;
-
+ 
       // --- 入室不可チェック ---
       if (isUserBlacklisted(shop)) {
           alert(`⛔ アクセス拒否\nあなたのIDは、この会場のブラックリストに含まれているため操作できません。`);
           return;
       }
-
+ 
       if (isUserNotWhitelisted(shop)) {
           alert(`🔒 アクセス制限\nこの会場は「ホワイトリスト（許可制）」です。\nあなたのIDは許可リストに入っていません。`);
           return;
       }
-
+ 
       if (isAdminRestrictedAndNotAllowed(shop)) {
           alert(`🔒 管理者制限\nこの会場は「指名スタッフ限定モード」です。\nアクセス権限がありません。`);
           return;
       }
       // ----------------------
-
+ 
       // パスワード認証 (入室前に必ず確認)
       const inputPass = prompt(`「${shop.name}」の管理用パスワードを入力してください`);
       if (inputPass !== shop.password) {
           alert("パスワードが違います");
           return;
       }
-
+ 
       setExpandedShopId(shopId);
   };
-
+ 
   // --- 編集関連 ---
   const resetForm = () => {
     setIsEditing(false);
@@ -179,11 +213,11 @@ export default function AdminPage() {
     setIsQueueMode(false); // 初期化
     setReleaseBeforeTime(""); // ★初期化
   };
-
+ 
   const startEdit = (shop: any) => {
     // 編集時も権限チェック
     if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
-
+ 
     setIsEditing(true);
     setManualId(shop.id); 
     setNewName(shop.name);
@@ -202,23 +236,23 @@ export default function AdminPage() {
     
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-
+ 
   const handleSave = async () => {
     if (!isEditing) return alert("新規会場の作成は無効化されています。");
-
+ 
     const currentShop = attractions.find(s => s.id === manualId);
     
     // 保存時も権限チェック
     if (currentShop && (isUserBlacklisted(currentShop) || isUserNotWhitelisted(currentShop))) {
         return alert("権限がないため保存できません。");
     }
-
+ 
     if (!manualId || !newName || !password) return alert("必須項目を入力してください");
     if (password.length !== 5) return alert("パスワードは5桁です");
-
+ 
     let slots: any = {};
     let shouldResetSlots = true;
-
+ 
     // 時間予約制の場合のみスロット計算を行う
     if (!isQueueMode) {
         if (currentShop && currentShop.openTime === openTime && currentShop.closeTime === closeTime && currentShop.duration === duration) {
@@ -227,7 +261,7 @@ export default function AdminPage() {
         } else {
             if(!confirm("時間を変更すると、現在の予約枠がリセットされます。よろしいですか？")) return;
         }
-
+ 
         if (shouldResetSlots) {
             let current = new Date(`2000/01/01 ${openTime}`);
             const end = new Date(`2000/01/01 ${closeTime}`);
@@ -242,7 +276,7 @@ export default function AdminPage() {
         // 順番待ちモードならスロットは既存維持か空にする（ここでは既存維持しつつモード優先）
         slots = currentShop?.slots || {}; 
     }
-
+ 
     const data: any = {
       name: newName, 
       department,
@@ -254,63 +288,63 @@ export default function AdminPage() {
       releaseBeforeTime, // ★保存 (事前解放設定を追加)
       slots // 予約制の場合は更新されたslots
     };
-
+ 
     await setDoc(doc(db, "attractions", manualId), data, { merge: true });
     
     alert("更新しました");
     setExpandedShopId(manualId);
     resetForm(); 
   };
-
+ 
   const handleDeleteVenue = async (id: string) => {
     const shop = attractions.find(s => s.id === id);
     if (shop && (isUserBlacklisted(shop) || isUserNotWhitelisted(shop))) return;
-
+ 
     if (!confirm("本当に会場を削除しますか？")) return;
     await deleteDoc(doc(db, "attractions", id));
     setExpandedShopId(null);
   };
-
+ 
   // --- 予約操作関連 (時間予約制用) ---
   const toggleReservationStatus = async (shop: any, res: any, newStatus: "reserved" | "used") => {
       if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
       if(!confirm(newStatus === "used" ? "入場済みにしますか？" : "入場を取り消して予約状態に戻しますか？")) return;
-
+ 
       const otherRes = shop.reservations.filter((r: any) => r.timestamp !== res.timestamp);
       const updatedRes = { ...res, status: newStatus };
-
+ 
       await updateDoc(doc(db, "attractions", shop.id), {
           reservations: [...otherRes, updatedRes]
       });
   };
-
+ 
   const cancelReservation = async (shop: any, res: any) => {
       if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
       if(!confirm(`User ID: ${res.userId}\nこの予約を削除しますか？`)) return;
-
+ 
       const otherRes = shop.reservations.filter((r: any) => r.timestamp !== res.timestamp);
       const updatedSlots = { ...shop.slots, [res.time]: Math.max(0, shop.slots[res.time] - 1) };
-
+ 
       await updateDoc(doc(db, "attractions", shop.id), {
           reservations: otherRes,
           slots: updatedSlots
       });
   };
-
+ 
   // --- ★追加: 順番待ち操作関連 (Queue System) ---
   const handleQueueAction = async (shop: any, ticket: any, action: "call" | "enter" | "cancel") => {
       if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
-
+ 
       let confirmMsg = "";
       if (action === "call") confirmMsg = `Ticket No.${ticket.ticketId}\n呼び出しを行いますか？（ユーザー画面が赤くなります）`;
       if (action === "enter") confirmMsg = `Ticket No.${ticket.ticketId}\n入場済みにしますか？（列から削除されます）`;
       if (action === "cancel") confirmMsg = `Ticket No.${ticket.ticketId}\n強制取り消ししますか？（列から削除されます）`;
-
+ 
       if (!confirm(confirmMsg)) return;
-
+ 
       const currentQueue = shop.queue || [];
       let updatedQueue = [];
-
+ 
       if (action === "call") {
           // ステータスを更新して維持
           updatedQueue = currentQueue.map((t: any) => 
@@ -320,15 +354,84 @@ export default function AdminPage() {
           // enter (強制入場) または cancel (強制取消) はリストから削除
           updatedQueue = currentQueue.filter((t: any) => t.ticketId !== ticket.ticketId);
       }
-
+ 
       await updateDoc(doc(db, "attractions", shop.id), {
           queue: updatedQueue
       });
   };
-
+ 
+  // --- ★追加: ゲスト枠追加モーダルを開く ---
+  const openGuestModal = (shop: any) => {
+      if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop) || isAdminRestrictedAndNotAllowed(shop)) {
+          alert("権限がないため操作できません。");
+          return;
+      }
+      setGuestModalShopId(shop.id);
+      setGuestSelectedTime("");
+      setGuestCount(1);
+  };
+ 
+  // --- ★追加: ゲスト枠を確定する ---
+  const handleAddGuestSlot = async () => {
+      if (!guestModalShopId) return;
+      const shop = attractions.find(s => s.id === guestModalShopId);
+      if (!shop) return;
+ 
+      const guestId = generateGuestId(shop);
+      const timestamp = Date.now();
+ 
+      if (shop.isQueueMode) {
+          // 順番待ち制: Queueの最後尾に追加
+          const currentQueue = shop.queue || [];
+          // ticketId は既存の採番ロジックに倣いつつ、ゲスト用のユニーク値を生成
+          const ticketId = guestId; // TicketIDにゲストIDをそのまま利用
+          const newTicket = {
+              ticketId,
+              userId: guestId,
+              count: guestCount,
+              status: "waiting",
+              timestamp,
+              isGuest: true,
+          };
+          await updateDoc(doc(db, "attractions", shop.id), {
+              queue: [...currentQueue, newTicket],
+          });
+          alert(`ゲスト枠を追加しました\nGuest ID: ${guestId}`);
+      } else {
+          // 時間予約制: 選択した時間枠に予約を追加
+          if (!guestSelectedTime) {
+              alert("時間を選択してください");
+              return;
+          }
+          const slotCount = shop.slots?.[guestSelectedTime] ?? 0;
+          if (slotCount >= shop.capacity) {
+              alert("選択した時間枠はすでに満員です");
+              return;
+          }
+          const currentReservations = shop.reservations || [];
+          const newReservation = {
+              userId: guestId,
+              time: guestSelectedTime,
+              count: guestCount,
+              status: "reserved",
+              timestamp,
+              isGuest: true,
+          };
+          const updatedSlots = { ...shop.slots, [guestSelectedTime]: slotCount + 1 };
+          await updateDoc(doc(db, "attractions", shop.id), {
+              reservations: [...currentReservations, newReservation],
+              slots: updatedSlots,
+          });
+          alert(`ゲスト枠を追加しました\nGuest ID: ${guestId}\n時間: ${guestSelectedTime}`);
+      }
+ 
+      setGuestModalShopId(null);
+  };
+ 
   // --- 表示用ヘルパー ---
   const targetShop = attractions.find(s => s.id === expandedShopId);
-
+  const guestModalShop = attractions.find(s => s.id === guestModalShopId);
+ 
   const getReservationsByTime = (shop: any) => {
       const grouped: any = {};
       Object.keys(shop.slots || {}).sort().forEach(time => {
@@ -343,7 +446,15 @@ export default function AdminPage() {
       }
       return grouped;
   };
-
+ 
+  // ★追加: 時間予約制で予約可能（満員でない）なスロット一覧を返す
+  const getAvailableTimeSlots = (shop: any): string[] => {
+      if (!shop || !shop.slots) return [];
+      return Object.keys(shop.slots).sort().filter(time => {
+          return (shop.slots[time] ?? 0) < shop.capacity;
+      });
+  };
+ 
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans">
       
@@ -354,7 +465,7 @@ export default function AdminPage() {
               {myUserId || "---"}
           </div>
       </div>
-
+ 
       <div className="max-w-4xl mx-auto p-4 pb-32">
         {/* ヘッダーエリア */}
         <div className="mb-6 border-b border-gray-700 pb-4">
@@ -368,7 +479,7 @@ export default function AdminPage() {
                     </h3>
                     
                     {/* ★★★ 入力フォーム（ラベル・説明付き） ★★★ */}
-
+ 
                     {/* 1. 変更不可情報（ID, Pass） */}
                     <div className="grid gap-4 md:grid-cols-2 mb-4 bg-gray-900/50 p-3 rounded border border-gray-700">
                         <div className="flex flex-col">
@@ -388,7 +499,7 @@ export default function AdminPage() {
                             />
                         </div>
                     </div>
-
+ 
                     {/* 2. 基本情報 */}
                     <div className="grid gap-4 md:grid-cols-2 mb-4">
                         <div className="flex flex-col">
@@ -409,7 +520,7 @@ export default function AdminPage() {
                             />
                         </div>
                     </div>
-
+ 
                     {/* 3. 画像URL */}
                     <div className="mb-4">
                         <div className="flex flex-col">
@@ -422,7 +533,7 @@ export default function AdminPage() {
                             />
                         </div>
                     </div>
-
+ 
                     {/* 4. 説明文 (追加) */}
                     <div className="mb-4">
                       <label className="text-xs text-gray-400 mb-1 block">会場説明文 <span className="text-gray-500 text-[10px] border border-gray-600 px-1 rounded ml-1">任意</span> <span className="text-[10px] text-gray-500 ml-1">※最大500文字</span></label>
@@ -435,7 +546,7 @@ export default function AdminPage() {
                       />
                       <div className="text-right text-xs text-gray-500">{description.length}/500</div>
                     </div>
-
+ 
                     {/* ★ 運用モード設定 ★ */}
                     <div className="bg-gray-750 p-3 rounded border border-gray-600 mb-4 bg-gray-900/30">
                          <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Operation Mode</h4>
@@ -462,7 +573,7 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </div>
-
+ 
                     {/* 5. 時間・予約設定 (順番待ち制の場合は一部無効化などのUI制御も可能だが、今回はそのまま表示) */}
                     {!isQueueMode && (
                         <div className="bg-gray-750 p-3 rounded border border-gray-600 mb-4 bg-gray-900/30">
@@ -501,7 +612,7 @@ export default function AdminPage() {
                             <input type="number" value={groupLimit} onChange={e => setGroupLimit(Number(e.target.value))} className="w-20 bg-gray-700 p-2 rounded text-sm outline-none text-center border border-gray-600 focus:border-blue-500" />
                          </div>
                     </div>
-
+ 
                     <div className="flex gap-2">
                         <button onClick={handleSave} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-3 rounded font-bold transition shadow-lg shadow-blue-900/40">変更を保存</button>
                         <button onClick={resetForm} className="bg-gray-700 hover:bg-gray-600 px-6 rounded text-sm transition border border-gray-600">キャンセル</button>
@@ -512,7 +623,7 @@ export default function AdminPage() {
                     ※設定を変更するには、下のリストから会場を選び「設定編集」ボタンを押してください。
                 </div>
             )}
-
+ 
             {/* ユーザーID検索 */}
             <div className="flex gap-2 items-center bg-gray-800 p-2 rounded border border-gray-600">
                 <span className="text-xl">🔍</span>
@@ -529,7 +640,7 @@ export default function AdminPage() {
                 )}
             </div>
         </div>
-
+ 
         {/* --- メインエリア --- */}
         
         {/* 1. 一覧モード（詳細が開かれていない時） */}
@@ -544,9 +655,9 @@ export default function AdminPage() {
                     const blacklisted = isUserBlacklisted(shop);     // ブラックリストに入っている
                     const notWhitelisted = isUserNotWhitelisted(shop); // ホワイトリストモードなのにリストにいない
                     const adminRestricted = isAdminRestrictedAndNotAllowed(shop); // 管理者モード制限
-
+ 
                     const isLocked = blacklisted || notWhitelisted || adminRestricted;
-
+ 
                     return (
                         <button 
                             key={shop.id} 
@@ -562,7 +673,7 @@ export default function AdminPage() {
                             ) : (
                                 <div className="w-16 h-16 rounded bg-gray-700 flex items-center justify-center text-2xl flex-shrink-0">🎪</div>
                             )}
-
+ 
                             <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-2 mb-1">
                                     <span className="text-yellow-400 font-bold font-mono text-xl">{shop.id}</span>
@@ -573,7 +684,7 @@ export default function AdminPage() {
                                             {shop.department}
                                         </span>
                                     )}
-
+ 
                                     {/* 状態表示 */}
                                     {blacklisted && <span className="text-xs bg-red-900 text-red-200 border border-red-700 px-2 py-0.5 rounded font-bold">⛔ BAN指定</span>}
                                     {notWhitelisted && <span className="text-xs bg-gray-700 text-gray-300 border border-gray-500 px-2 py-0.5 rounded font-bold">🔒 許可外</span>}
@@ -586,7 +697,7 @@ export default function AdminPage() {
                                         <span className="text-xs bg-blue-900/60 text-blue-300 border border-blue-700 px-2 py-0.5 rounded">🕒 時間予約</span>
                                     )}
                                 </div>
-
+ 
                                 <div className="flex items-center gap-2">
                                     <span className="font-bold text-lg truncate w-full">{shop.name}</span>
                                     {shop.isPaused && <span className="text-xs bg-red-600 px-2 py-0.5 rounded text-white whitespace-nowrap">停止中</span>}
@@ -599,7 +710,7 @@ export default function AdminPage() {
                                     )}
                                 </div>
                             </div>
-
+ 
                             <div className="self-center text-gray-400 text-2xl group-hover:text-white transition-transform group-hover:translate-x-1">
                                 ›
                             </div>
@@ -608,7 +719,7 @@ export default function AdminPage() {
                 })}
             </div>
         )}
-
+ 
         {/* 2. 詳細モード（会場が選択された時） */}
         {expandedShopId && targetShop && (
             <div className="animate-fade-in">
@@ -616,7 +727,7 @@ export default function AdminPage() {
                 <button onClick={() => { setExpandedShopId(null); setIsEditing(false); }} className="mb-4 flex items-center gap-2 text-gray-400 hover:text-white">
                     ← 会場一覧に戻る
                 </button>
-
+ 
                 <div className="bg-gray-800 rounded-xl border border-gray-600 overflow-hidden">
                     {/* タイトルバー */}
                     <div className="bg-gray-700 p-4 flex justify-between items-start relative overflow-hidden">
@@ -626,7 +737,7 @@ export default function AdminPage() {
                                 <img src={targetShop.imageUrl} className="w-full h-full object-cover" alt="" />
                             </div>
                         )}
-
+ 
                         <div className="relative z-10">
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="text-yellow-400 font-mono font-bold text-xl">{targetShop.id}</span>
@@ -644,13 +755,13 @@ export default function AdminPage() {
                             </h2>
                             <p className="text-xs text-gray-300 mt-1 drop-shadow-md">Pass: **** | 定員: {targetShop.capacity}組</p>
                         </div>
-
+ 
                         <div className="flex gap-2 relative z-10">
                             <button onClick={() => startEdit(targetShop)} className="bg-blue-600 text-xs px-3 py-2 rounded hover:bg-blue-500 font-bold shadow-lg">⚙️ 設定編集</button>
                             <button onClick={() => handleDeleteVenue(targetShop.id)} className="bg-red-600 text-xs px-3 py-2 rounded hover:bg-red-500 shadow-lg">削除</button>
                         </div>
                     </div>
-
+ 
                     <div className="p-4 space-y-6">
                         {/* 説明文表示 */}
                         {targetShop.description && (
@@ -658,7 +769,18 @@ export default function AdminPage() {
                                 {targetShop.description}
                             </div>
                         )}
-
+ 
+                        {/* ★追加: ゲスト枠追加ボタン */}
+                        <div className="flex justify-end">
+                            <button
+                                onClick={() => openGuestModal(targetShop)}
+                                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white text-sm px-4 py-2 rounded-lg font-bold shadow-md transition"
+                            >
+                                <span>👤</span>
+                                <span>ゲスト枠を追加</span>
+                            </button>
+                        </div>
+ 
                         {/* ★★★ 運用モードによる分岐 ★★★ */}
                         
                         {targetShop.isQueueMode ? (
@@ -683,40 +805,41 @@ export default function AdminPage() {
                                             <div className="col-span-2 text-center">Status</div>
                                             <div className="col-span-4 text-center">Action</div>
                                         </div>
-
+ 
                                         {targetShop.queue.map((ticket: any, index: number) => {
                                             // 検索マッチング（TicketID優先、UserIDも可）
                                             const isMatch = searchUserId && (
                                                 ticket.ticketId?.includes(searchUserId.toUpperCase()) || 
                                                 ticket.userId?.includes(searchUserId.toUpperCase())
                                             );
-
+ 
                                             const isCalled = ticket.status === "ready";
-
+ 
                                             return (
                                                 <div key={ticket.ticketId} className={`grid grid-cols-12 gap-2 px-4 py-3 items-center hover:bg-gray-800/50 transition ${isMatch ? 'bg-pink-900/20 ring-1 ring-pink-500 inset-0' : ''}`}>
                                                     {/* No. */}
                                                     <div className="col-span-1 text-lg font-bold text-gray-500 font-mono">
                                                         {index + 1}
                                                     </div>
-
+ 
                                                     {/* ID & User */}
                                                     <div className="col-span-3">
-                                                        <div className="text-lg font-bold text-yellow-400 font-mono tracking-wider">
+                                                        <div className="text-lg font-bold text-yellow-400 font-mono tracking-wider flex items-center gap-1">
                                                             {ticket.ticketId}
+                                                            {ticket.isGuest && <span className="text-[9px] bg-amber-700 text-amber-200 px-1 rounded">G</span>}
                                                         </div>
                                                         <div className="text-[10px] text-gray-500 font-mono truncate">
                                                             UID: {ticket.userId}
                                                         </div>
                                                     </div>
-
+ 
                                                     {/* 人数 */}
                                                     <div className="col-span-2 text-center">
                                                         <span className="bg-gray-700 px-2 py-1 rounded text-sm font-bold text-white">
                                                             {ticket.count}名
                                                         </span>
                                                     </div>
-
+ 
                                                     {/* Status */}
                                                     <div className="col-span-2 text-center">
                                                         {isCalled ? (
@@ -729,7 +852,7 @@ export default function AdminPage() {
                                                             </span>
                                                         )}
                                                     </div>
-
+ 
                                                     {/* Actions */}
                                                     <div className="col-span-4 flex justify-end gap-1">
                                                         {/* Call Button */}
@@ -750,7 +873,7 @@ export default function AdminPage() {
                                                         >
                                                             入場
                                                         </button>
-
+ 
                                                         {/* Cancel (Force) */}
                                                         <button 
                                                             onClick={() => handleQueueAction(targetShop, ticket, "cancel")}
@@ -772,7 +895,7 @@ export default function AdminPage() {
                                 {Object.entries(getReservationsByTime(targetShop)).map(([time, reservations]: any) => {
                                     const slotCount = targetShop.slots[time] || 0;
                                     const isFull = slotCount >= targetShop.capacity;
-
+ 
                                     return (
                                         <div key={time} className={`border rounded-lg p-3 ${isFull ? 'border-red-500/50 bg-red-900/10' : 'border-gray-600 bg-gray-900/50'}`}>
                                             {/* 時間ヘッダー */}
@@ -782,7 +905,7 @@ export default function AdminPage() {
                                                     予約: {slotCount} / {targetShop.capacity}
                                                 </span>
                                             </div>
-
+ 
                                             {/* 予約者リスト */}
                                             <div className="space-y-2">
                                                 {reservations.length === 0 && <p className="text-xs text-gray-500 text-center py-1">予約なし</p>}
@@ -793,9 +916,10 @@ export default function AdminPage() {
                                                     return (
                                                         <div key={res.timestamp} className={`flex justify-between items-center p-2 rounded ${res.status === 'used' ? 'bg-gray-800 opacity-60' : 'bg-gray-700'} ${isMatch ? 'ring-2 ring-pink-500' : ''}`}>
                                                             <div>
-                                                                <div className="font-mono font-bold text-yellow-400 flex items-center">
+                                                                <div className="font-mono font-bold text-yellow-400 flex items-center gap-1">
                                                                     <span>ID: {res.userId}</span>
-                                                                    <span className="ml-2 text-sm text-white font-normal bg-gray-600 px-2 py-0.5 rounded-full">
+                                                                    {res.isGuest && <span className="text-[9px] bg-amber-700 text-amber-200 px-1 rounded">GUEST</span>}
+                                                                    <span className="ml-1 text-sm text-white font-normal bg-gray-600 px-2 py-0.5 rounded-full">
                                                                         {res.count || 1}名
                                                                     </span>
                                                                 </div>
@@ -830,7 +954,103 @@ export default function AdminPage() {
             </div>
         )}
       </div>
+ 
+      {/* ★追加: ゲスト枠追加モーダル */}
+      {guestModalShopId && guestModalShop && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="bg-gray-800 rounded-2xl border border-amber-500/50 shadow-2xl shadow-amber-900/30 w-full max-w-sm p-6 animate-fade-in">
+                  {/* モーダルヘッダー */}
+                  <div className="flex items-center gap-3 mb-5">
+                      <div className="w-10 h-10 rounded-full bg-amber-600 flex items-center justify-center text-xl flex-shrink-0">👤</div>
+                      <div>
+                          <h2 className="text-lg font-bold text-white">ゲスト枠を追加</h2>
+                          <p className="text-xs text-amber-400 font-mono">{guestModalShop.name}</p>
+                      </div>
+                  </div>
+ 
+                  {/* 採番プレビュー */}
+                  <div className="bg-gray-900/70 border border-gray-600 rounded-lg px-4 py-3 mb-4 flex justify-between items-center">
+                      <span className="text-xs text-gray-400">割り当てられるGuest ID</span>
+                      <span className="text-lg font-bold text-amber-400 font-mono tracking-widest">
+                          {generateGuestId(guestModalShop)}
+                      </span>
+                  </div>
+ 
+                  {/* 時間予約制の場合: 時間枠選択 */}
+                  {!guestModalShop.isQueueMode && (
+                      <div className="mb-4">
+                          <label className="text-xs text-gray-400 mb-2 block">予約する時間枠を選択 <span className="text-red-500">*</span></label>
+                          <select
+                              value={guestSelectedTime}
+                              onChange={e => setGuestSelectedTime(e.target.value)}
+                              className="w-full bg-gray-700 border border-gray-500 focus:border-amber-500 outline-none rounded-lg px-3 py-2 text-white text-sm"
+                          >
+                              <option value="">-- 時間を選択 --</option>
+                              {getAvailableTimeSlots(guestModalShop).map(time => {
+                                  const slotCount = guestModalShop.slots?.[time] ?? 0;
+                                  const remaining = guestModalShop.capacity - slotCount;
+                                  return (
+                                      <option key={time} value={time}>
+                                          {time} （残り {remaining} 枠）
+                                      </option>
+                                  );
+                              })}
+                          </select>
+                          {getAvailableTimeSlots(guestModalShop).length === 0 && (
+                              <p className="text-xs text-red-400 mt-1">予約可能な時間枠がありません</p>
+                          )}
+                      </div>
+                  )}
+ 
+                  {/* 順番待ち制の場合: 情報表示 */}
+                  {guestModalShop.isQueueMode && (
+                      <div className="mb-4 bg-green-900/20 border border-green-700/50 rounded-lg px-4 py-3 text-xs text-green-300">
+                          待機列の最後尾（現在 {guestModalShop.queue?.length || 0}組目）に追加されます
+                      </div>
+                  )}
+ 
+                  {/* 人数入力 */}
+                  <div className="mb-6">
+                      <label className="text-xs text-gray-400 mb-2 block">人数</label>
+                      <div className="flex items-center gap-3">
+                          <button
+                              onClick={() => setGuestCount(c => Math.max(1, c - 1))}
+                              className="w-9 h-9 rounded-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg flex items-center justify-center transition"
+                          >
+                              −
+                          </button>
+                          <span className="flex-1 text-center text-2xl font-bold text-white font-mono">
+                              {guestCount}<span className="text-sm text-gray-400 ml-1">名</span>
+                          </span>
+                          <button
+                              onClick={() => setGuestCount(c => Math.min(guestModalShop.groupLimit || 10, c + 1))}
+                              className="w-9 h-9 rounded-full bg-gray-700 hover:bg-gray-600 text-white font-bold text-lg flex items-center justify-center transition"
+                          >
+                              ＋
+                          </button>
+                      </div>
+                      <p className="text-[10px] text-gray-500 text-center mt-1">最大 {guestModalShop.groupLimit || 10}名</p>
+                  </div>
+ 
+                  {/* ボタン */}
+                  <div className="flex gap-3">
+                      <button
+                          onClick={() => setGuestModalShopId(null)}
+                          className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2.5 rounded-lg text-sm transition border border-gray-600"
+                      >
+                          キャンセル
+                      </button>
+                      <button
+                          onClick={handleAddGuestSlot}
+                          disabled={!guestModalShop.isQueueMode && !guestSelectedTime}
+                          className="flex-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-white py-2.5 rounded-lg text-sm font-bold transition shadow-lg"
+                      >
+                          追加する
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 }
-
