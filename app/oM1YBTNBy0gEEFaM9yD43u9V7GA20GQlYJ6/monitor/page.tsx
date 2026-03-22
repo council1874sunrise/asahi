@@ -796,7 +796,7 @@ function CalledCard({
       {/* 大ID */}
       <div
         style={{
-          fontSize: 96,
+          fontSize: 72,
           fontWeight: 900,
           lineHeight: 1,
           letterSpacing: "0.04em",
