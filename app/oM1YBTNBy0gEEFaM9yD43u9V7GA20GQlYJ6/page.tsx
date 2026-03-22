@@ -50,6 +50,9 @@ export default function AdminPage() {
 
   // ★追加: 運用モード（false: 時間予約制, true: 順番待ち制）
   const [isQueueMode, setIsQueueMode] = useState(false);
+  
+  // ★追加: 事前解放設定 (例: "01:30" = 1時間30分前に解放)
+  const [releaseBeforeTime, setReleaseBeforeTime] = useState("");
 
   // 検索用
   const [searchUserId, setSearchUserId] = useState("");
@@ -174,6 +177,7 @@ export default function AdminPage() {
     setGroupLimit(4); setOpenTime("10:00"); setCloseTime("15:00");
     setDuration(20); setCapacity(3); setIsPaused(false);
     setIsQueueMode(false); // 初期化
+    setReleaseBeforeTime(""); // ★初期化
   };
 
   const startEdit = (shop: any) => {
@@ -194,6 +198,7 @@ export default function AdminPage() {
     setCapacity(shop.capacity); 
     setIsPaused(shop.isPaused || false);
     setIsQueueMode(shop.isQueueMode || false); // モード読み込み
+    setReleaseBeforeTime(shop.releaseBeforeTime || ""); // ★事前解放設定読み込み
     
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -246,6 +251,7 @@ export default function AdminPage() {
       password, groupLimit,
       openTime, closeTime, duration, capacity, isPaused,
       isQueueMode, // ★保存
+      releaseBeforeTime, // ★保存 (事前解放設定を追加)
       slots // 予約制の場合は更新されたslots
     };
 
@@ -461,7 +467,8 @@ export default function AdminPage() {
                     {!isQueueMode && (
                         <div className="bg-gray-750 p-3 rounded border border-gray-600 mb-4 bg-gray-900/30">
                             <h4 className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider">Time Settings (予約制のみ)</h4>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+                            {/* 事前解放設定の入力枠を確保するため grid-cols-5 に変更 */}
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3">
                                 <div className="flex flex-col">
                                     <label className="text-[10px] text-gray-400 mb-1">開始時間 <span className="text-red-500">*</span></label>
                                     <input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} className="bg-gray-700 p-2 rounded text-sm outline-none border border-gray-600 focus:border-blue-500"/>
@@ -477,6 +484,11 @@ export default function AdminPage() {
                                 <div className="flex flex-col">
                                     <label className="text-[10px] text-gray-400 mb-1">枠ごとの定員(組) <span className="text-red-500">*</span></label>
                                     <input type="number" value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="bg-gray-700 p-2 rounded text-sm outline-none border border-gray-600 focus:border-blue-500" placeholder="定員"/>
+                                </div>
+                                {/* ★事前解放時間設定フィールド */}
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] text-gray-400 mb-1">事前解放(時間前) <span className="text-[8px] bg-gray-700 px-1 rounded text-gray-400">任意</span></label>
+                                    <input type="time" value={releaseBeforeTime} onChange={e => setReleaseBeforeTime(e.target.value)} className="bg-gray-700 p-2 rounded text-sm outline-none border border-gray-600 focus:border-blue-500"/>
                                 </div>
                             </div>
                         </div>
@@ -519,7 +531,7 @@ export default function AdminPage() {
         </div>
 
         {/* --- メインエリア --- */}
-
+        
         {/* 1. 一覧モード（詳細が開かれていない時） */}
         {!expandedShopId && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
