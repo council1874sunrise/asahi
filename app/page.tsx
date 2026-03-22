@@ -44,6 +44,17 @@ export default function Home() {
   const [draftBooking, setDraftBooking] = useState<{ time: string; remaining: number; mode: "slot" | "queue"; maxPeople: number } | null>(null);
   const [peopleCount, setPeopleCount] = useState<number>(1);
 
+  // ★現在時刻のステート（解放判定＆時計表示用）
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // ★現在時刻を1秒ごとに更新
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   // ★音を鳴らす関数
   const playBeep = () => {
     try {
@@ -92,11 +103,11 @@ export default function Home() {
     signInAnonymously(auth).catch((e) => console.error(e));
     
     let storedId = localStorage.getItem("bunkasai_user_id");
-    if (!storedId) {
-      // 0〜999999までの数値を生成し、6桁になるよう先頭を0で埋める
-      storedId = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
-      localStorage.setItem("bunkasai_user_id", storedId);
-    }
+    if (!storedId) {
+      // 0〜999999までの数値を生成し、6桁になるよう先頭を0で埋める
+      storedId = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      localStorage.setItem("bunkasai_user_id", storedId);
+    }
     setUserId(storedId);
 
     const userDocRef = doc(db, "users", storedId);
@@ -535,6 +546,12 @@ export default function Home() {
         // 詳細・予約画面
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden pb-10">
             <div className="relative">
+               {/* ★詳細ヘッダー：現在時刻の表示 */}
+               <div className="bg-gray-900 text-white text-center py-2 text-lg font-mono tracking-widest flex items-center justify-center gap-2">
+                   <span className="text-sm text-gray-300">現在時刻</span>
+                   {currentTime.toLocaleTimeString('ja-JP', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+               </div>
+
                {/* 詳細ヘッダー画像 */}
                {selectedShop.imageUrl && (
                  <div className="w-full h-56 bg-gray-200">
@@ -548,12 +565,12 @@ export default function Home() {
 
                <button 
                  onClick={() => { setSelectedShop(null); setDraftBooking(null); }} 
-                 className="absolute top-3 left-3 bg-black/50 text-white px-4 py-2 rounded-full text-sm backdrop-blur-md z-10 hover:bg-black/70 transition"
+                 className={`absolute ${selectedShop.imageUrl ? "top-14" : "top-3"} left-3 bg-black/50 text-white px-4 py-2 rounded-full text-sm backdrop-blur-md z-10 hover:bg-black/70 transition`}
                >
                  ← 戻る
                </button>
 
-               <div className={`p-5 border-b bg-gray-50 ${!selectedShop.imageUrl ? "pt-14" : ""}`}>
+               <div className={`p-5 border-b bg-gray-50 ${!selectedShop.imageUrl ? "pt-16" : ""}`}>
                    {selectedShop.department && (
                      <p className="text-sm font-bold text-blue-600 mb-1">{selectedShop.department}</p>
                    )}
@@ -601,15 +618,41 @@ export default function Home() {
                                  const remaining = limitGroups - count;
                                  const isBooked = activeTickets.some(t => t.shopId === selectedShop.id && t.time === time);
                                  
+                                 // ★解放判定ロジックの追加
+                                 let isLocked = false;
+                                 let releaseTimeStr = "";
+
+                                 if (selectedShop.releaseBeforeTime && selectedShop.releaseBeforeTime !== "00:00") {
+                                     // 予約枠の時間を本日の日付として設定
+                                     const [slotHour, slotMinute] = time.split(':').map(Number);
+                                     const slotDate = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate(), slotHour, slotMinute, 0, 0);
+                                     
+                                     // 設定時間（例:00:30）を逆算
+                                     const [offsetHour, offsetMinute] = selectedShop.releaseBeforeTime.split(':').map(Number);
+                                     const releaseDate = new Date(slotDate.getTime() - (offsetHour * 60 + offsetMinute) * 60000);
+
+                                     if (currentTime < releaseDate) {
+                                         isLocked = true;
+                                         releaseTimeStr = `${String(releaseDate.getHours()).padStart(2, '0')}:${String(releaseDate.getMinutes()).padStart(2, '0')} 解放`;
+                                     }
+                                 }
+
+                                 const isDisabled = isFull || isBooked || isLocked;
+                                 
                                  return (
                                      <button 
                                        key={time} 
-                                       disabled={isFull || isBooked} 
+                                       disabled={isDisabled} 
                                        onClick={() => handleSelectTime(selectedShop, time)}
-                                       className={`p-2 rounded border h-24 flex flex-col items-center justify-center ${isBooked ? "bg-green-50 border-green-500" : "bg-white border-blue-200"}`}
+                                       className={`p-2 rounded border h-24 flex flex-col items-center justify-center transition-colors
+                                         ${isBooked ? "bg-green-50 border-green-500" 
+                                         : isLocked ? "bg-gray-100 border-gray-300 opacity-60 cursor-not-allowed" 
+                                         : "bg-white border-blue-200 hover:bg-blue-50"}`}
                                      >
-                                        <span className="font-bold">{time}</span>
-                                        <span className="text-xs">{isBooked ? "予約済" : isFull ? "満席" : `あと${remaining}組`}</span>
+                                        <span className={`font-bold ${isLocked ? "text-gray-500" : ""}`}>{time}</span>
+                                        <span className={`text-xs mt-1 ${isLocked ? "text-red-500 font-bold" : ""}`}>
+                                           {isBooked ? "予約済" : isLocked ? releaseTimeStr : isFull ? "満席" : `あと${remaining}組`}
+                                        </span>
                                      </button>
                                  );
                               })}
