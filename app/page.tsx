@@ -92,10 +92,11 @@ export default function Home() {
     signInAnonymously(auth).catch((e) => console.error(e));
     
     let storedId = localStorage.getItem("bunkasai_user_id");
-    if (!storedId) {
-      storedId = Math.random().toString(36).substring(2, 8).toUpperCase();
-      localStorage.setItem("bunkasai_user_id", storedId);
-    }
+    if (!storedId) {
+      // 0〜999999までの数値を生成し、6桁になるよう先頭を0で埋める
+      storedId = Math.floor(Math.random() * 1000000).toString().padStart(6, '0');
+      localStorage.setItem("bunkasai_user_id", storedId);
+    }
     setUserId(storedId);
 
     const userDocRef = doc(db, "users", storedId);
