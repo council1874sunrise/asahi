@@ -44,12 +44,16 @@ export default function SuperAdminPage() {
   const [duration, setDuration] = useState(20);
   const [capacity, setCapacity] = useState(3);
   const [isPaused, setIsPaused] = useState(false);
+  const [releaseBeforeTime, setReleaseBeforeTime] = useState("00:00"); // ★追加: 解放制限時間
 
-  // ★追加: 運用モード（予約制 or 順番待ち制）
+  // 運用モード（予約制 or 順番待ち制）
   const [isQueueMode, setIsQueueMode] = useState(false);
 
   // 検索用
   const [searchUserId, setSearchUserId] = useState("");
+
+  // 現在時刻管理（解放判定の再計算用）
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     signInAnonymously(auth).catch((e) => console.error(e));
@@ -66,24 +70,25 @@ export default function SuperAdminPage() {
     }
     setMyUserId(stored);
 
-    // ★修正ポイント: 増殖バグ防止
-    // onSnapshotはデータ変更時に毎回新しい配列を返しますが、
-    // ここで確実にStateを丸ごと置き換えることで、画面上の増殖を防ぎます。
     const unsub = onSnapshot(collection(db, "attractions"), (snapshot) => {
       const newData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setAttractions(newData);
     });
-    return () => unsub();
+
+    const timer = setInterval(() => setNow(new Date()), 60000); // 1分ごとに現在時刻を更新
+
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
   }, []);
 
   // 統計データ
   const stats = useMemo(() => {
       const totalVenues = attractions.length;
       const pausedVenues = attractions.filter(a => a.isPaused).length;
-      // 予約制の場合はreservations、並び制の場合はqueueの待機数をカウント
       const totalReservations = attractions.reduce((sum, shop) => {
         if (shop.isQueueMode && shop.queue) {
-             // 待機中と呼び出し中のみカウント
              return sum + shop.queue.filter((t: any) => ['waiting', 'ready'].includes(t.status)).length;
         }
         return sum + (shop.reservations?.length || 0);
@@ -116,7 +121,6 @@ export default function SuperAdminPage() {
           const promises = attractions.map(shop => {
               const resetSlots: any = {};
               Object.keys(shop.slots || {}).forEach(key => { resetSlots[key] = 0; });
-              // 予約配列とキュー配列の両方をリセット
               return updateDoc(doc(db, "attractions", shop.id), { reservations: [], queue: [], slots: resetSlots });
           });
           await Promise.all(promises);
@@ -143,6 +147,7 @@ export default function SuperAdminPage() {
     setDepartment(""); setImageUrl(""); setDescription("");
     setGroupLimit(4); setOpenTime("10:00"); setCloseTime("15:00");
     setDuration(20); setCapacity(3); setIsPaused(false);
+    setReleaseBeforeTime("00:00");
     setIsQueueMode(false); 
   };
 
@@ -156,6 +161,7 @@ export default function SuperAdminPage() {
     setGroupLimit(shop.groupLimit || 4); setOpenTime(shop.openTime);
     setCloseTime(shop.closeTime); setDuration(shop.duration);
     setCapacity(shop.capacity); setIsPaused(shop.isPaused || false);
+    setReleaseBeforeTime(shop.releaseBeforeTime || "00:00");
     setIsQueueMode(shop.isQueueMode || false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -170,8 +176,8 @@ export default function SuperAdminPage() {
 
     let slots: any = {};
     let shouldResetSlots = true;
-    let existingReservations = [];
-    let existingQueue = [];
+    let existingReservations: any[] = [];
+    let existingQueue: any[] = [];
 
     if (isEditing) {
         const currentShop = attractions.find(s => s.id === originalId);
@@ -179,7 +185,7 @@ export default function SuperAdminPage() {
             existingReservations = currentShop.reservations || [];
             existingQueue = currentShop.queue || []; 
             if (currentShop.openTime === openTime && currentShop.closeTime === closeTime && currentShop.duration === duration) {
-                slots = currentShop.slots;
+                slots = currentShop.slots || {};
                 shouldResetSlots = false;
             } else {
                 if(!isQueueMode && !confirm("時間を変更すると、現在の予約枠がリセットされます。よろしいですか？")) return;
@@ -202,12 +208,11 @@ export default function SuperAdminPage() {
       name: newName, password, groupLimit,
       department, imageUrl, description,
       openTime, closeTime, duration, capacity, isPaused, slots,
-      isQueueMode, 
+      isQueueMode, releaseBeforeTime, 
       reservations: existingReservations,
       queue: existingQueue 
     };
 
-    // 新規作成時は空配列で初期化
     if (!isEditing) {
         data.reservations = [];
         data.queue = [];
@@ -234,7 +239,7 @@ export default function SuperAdminPage() {
     setExpandedShopId(null);
   };
 
-  // --- 予約操作 (従来モード用) ---
+  // 予約操作
   const toggleReservationStatus = async (shop: any, res: any, newStatus: "reserved" | "used") => {
      if(!confirm(newStatus === "used" ? "入場済みにしますか？" : "入場を取り消しますか？")) return;
      const otherRes = shop.reservations.filter((r: any) => r.timestamp !== res.timestamp);
@@ -249,9 +254,8 @@ export default function SuperAdminPage() {
       await updateDoc(doc(db, "attractions", shop.id), { reservations: otherRes, slots: updatedSlots });
   };
 
-  // --- ★ 順番待ちキュー操作 (修正済み) ---
+  // 順番待ちキュー操作
   const updateQueueStatus = async (shop: any, ticket: any, newStatus: 'waiting' | 'ready' | 'completed' | 'canceled') => {
-    // 確認ダイアログ
     let msg = "";
     if (newStatus === 'ready') msg = "呼び出しを行いますか？\n（ユーザーの画面が赤くなります）";
     if (newStatus === 'completed') msg = "【入場処理】\nこのチケットを入場済みにし、リストから削除しますか？";
@@ -259,24 +263,18 @@ export default function SuperAdminPage() {
       
     if (newStatus !== 'waiting' && !confirm(msg)) return;
 
-    // ★修正ポイント: 入場(completed)または取消(canceled)ならデータを消す
     if (newStatus === 'completed' || newStatus === 'canceled') {
-        // ticketIdがあればそれで、なければuserIdで一致するものを除外（削除）
         const newQueue = shop.queue.filter((t: any) => {
             if (ticket.ticketId) {
                 return t.ticketId !== ticket.ticketId;
             } else {
-                return t.userId !== ticket.userId; // 旧データ互換
+                return t.userId !== ticket.userId;
             }
         });
         await updateDoc(doc(db, "attractions", shop.id), { queue: newQueue });
-    
     } else {
-        // ★修正ポイント: ステータス更新（呼び出しなど）
         const updatedQueue = shop.queue.map((t: any) => {
-            // ticketId で厳密に照合
             const isMatch = ticket.ticketId ? (t.ticketId === ticket.ticketId) : (t.userId === ticket.userId);
-            
             if (isMatch) {
                 return { ...t, status: newStatus };
             }
@@ -288,6 +286,7 @@ export default function SuperAdminPage() {
 
   // 表示ヘルパー
   const targetShop = attractions.find(s => s.id === expandedShopId);
+
   const getReservationsByTime = (shop: any) => {
       const grouped: any = {};
       Object.keys(shop.slots || {}).sort().forEach(time => { grouped[time] = []; });
@@ -297,20 +296,34 @@ export default function SuperAdminPage() {
 
   const getQueueList = (shop: any) => {
       if (!shop.queue) return { active: [], history: [] };
-      // 入場(completed)は削除されるため、ここには基本的に waiting か ready しか残りません
       const active = shop.queue.filter((t: any) => ['waiting', 'ready'].includes(t.status));
-      // ※ historyは「削除」仕様になったため、空になるか、もし誤って残っている場合のみ表示されます
       const history = shop.queue.filter((t: any) => ['completed', 'canceled'].includes(t.status));
       
-      // ソート: 呼び出し中(ready)を先頭に、あとはticketId順(昇順)
       active.sort((a: any, b: any) => {
           if (a.status === 'ready' && b.status !== 'ready') return -1;
           if (a.status !== 'ready' && b.status === 'ready') return 1;
-          // ticketId (文字列) で比較
           return (a.ticketId || "0").localeCompare(b.ticketId || "0");
       });
 
       return { active, history };
+  };
+
+  // ★追加: 解放判定ロジック
+  const checkReleaseStatus = (slotTime: string, releaseBeforeTime?: string) => {
+      if (!releaseBeforeTime || releaseBeforeTime === "00:00") {
+          return { isReleased: true, releaseTimeStr: "" };
+      }
+
+      const [slotH, slotM] = slotTime.split(":").map(Number);
+      const [relH, relM] = releaseBeforeTime.split(":").map(Number);
+
+      const slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), slotH, slotM, 0);
+      const releaseDate = new Date(slotDate.getTime() - (relH * 60 + relM) * 60000);
+
+      const isReleased = now >= releaseDate;
+      const releaseTimeStr = `${String(releaseDate.getHours()).padStart(2, '0')}:${String(releaseDate.getMinutes()).padStart(2, '0')} 解放`;
+
+      return { isReleased, releaseTimeStr };
   };
 
   return (
@@ -323,7 +336,7 @@ export default function SuperAdminPage() {
       <div className="max-w-4xl mx-auto p-4 pb-32">
         <div className="mb-6 border-b border-gray-700 pb-4">
           <h1 className="text-2xl font-bold text-red-500 mb-4">生徒会・実行委員用 (Full Access)</h1>
-           
+            
           <details className="bg-gray-800 rounded-lg p-4 border border-gray-700 mb-4" open={isEditing}>
               <summary className="cursor-pointer font-bold text-blue-400">➕ 新規会場の作成 / 設定フォーム</summary>
               <div className="mt-4 pt-4 border-t border-gray-700">
@@ -370,7 +383,6 @@ export default function SuperAdminPage() {
 
                   {isEditing && manualId !== originalId && <div className="text-xs text-yellow-400 font-bold mb-2">⚠️ IDが変更されています。</div>}
 
-                  {/* ★ 運用モード選択スイッチ */}
                   <div className="bg-gray-900 p-3 rounded border border-gray-600 mb-3">
                       <label className="text-xs text-gray-400 mb-2 block font-bold">運用モード:</label>
                       <div className="flex gap-4">
@@ -385,8 +397,8 @@ export default function SuperAdminPage() {
                       </div>
                   </div>
 
-                  {/* ★UI変更: ラベル付き入力エリア */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 bg-gray-900 p-3 rounded border border-gray-600">
+                  {/* ★UI変更: 解放前時間を追加したグリッド */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-3 bg-gray-900 p-3 rounded border border-gray-600">
                       <div>
                           <label className="text-xs text-gray-400 block mb-1 font-bold">開始時刻</label>
                           <input type="time" value={openTime} onChange={e => setOpenTime(e.target.value)} className="w-full bg-gray-700 p-2 rounded text-sm"/>
@@ -396,14 +408,19 @@ export default function SuperAdminPage() {
                           <input type="time" value={closeTime} onChange={e => setCloseTime(e.target.value)} className="w-full bg-gray-700 p-2 rounded text-sm"/>
                       </div>
                       <div>
-                          <label className="text-xs text-gray-400 block mb-1 font-bold">1枠の時間(分)</label>
+                          <label className="text-xs text-gray-400 block mb-1 font-bold">1枠(分)</label>
                           <input type="number" value={duration} onChange={e => setDuration(Number(e.target.value))} className="w-full bg-gray-700 p-2 rounded text-sm" placeholder="分"/>
                       </div>
                       <div>
-                          <label className="text-xs text-gray-400 block mb-1 font-bold">枠ごとの定員(組)</label>
+                          <label className="text-xs text-gray-400 block mb-1 font-bold">定員(組)</label>
                           <input type="number" value={capacity} onChange={e => setCapacity(Number(e.target.value))} className="w-full bg-gray-700 p-2 rounded text-sm" placeholder="定員"/>
                       </div>
+                      <div>
+                          <label className="text-xs text-gray-400 block mb-1 font-bold text-yellow-400">解放制限(前)</label>
+                          <input type="time" value={releaseBeforeTime} onChange={e => setReleaseBeforeTime(e.target.value)} className="w-full bg-gray-700 p-2 rounded text-sm text-yellow-100" />
+                      </div>
                   </div>
+                  <div className="text-[10px] text-gray-400 mb-3 px-2">※解放制限：指定時間前になるまで予約枠をグレーアウトします。「00:00」で制限なし。</div>
 
                   <div className="flex items-center gap-3 mb-3 bg-gray-900 p-3 rounded border border-gray-600">
                       <div>
@@ -450,7 +467,6 @@ export default function SuperAdminPage() {
         {!expandedShopId && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {attractions.map(shop => {
-                    // 検索ヒット判定（予約 or キュー）
                     let hasUser = false;
                     let totalCount = 0;
                     if (shop.isQueueMode) {
@@ -464,7 +480,6 @@ export default function SuperAdminPage() {
                     return (
                         <button key={shop.id} onClick={() => setExpandedShopId(shop.id)} className={`p-4 rounded-xl border text-left flex justify-between items-center hover:bg-gray-800 transition ${hasUser ? 'bg-pink-900/40 border-pink-500' : 'bg-gray-800 border-gray-600'}`}>
                             <div className="flex items-center gap-4">
-                                {/* 画像 */}
                                 {shop.imageUrl ? (
                                     <img src={shop.imageUrl} alt={shop.name} referrerPolicy="no-referrer" className="w-14 h-14 object-cover rounded-md bg-gray-900 shrink-0" />
                                 ) : (
@@ -478,7 +493,6 @@ export default function SuperAdminPage() {
                                     <div className="flex items-center gap-2">
                                         <span className="font-bold text-lg leading-tight line-clamp-1">{shop.name}</span>
                                         {shop.isPaused && <span className="text-[10px] bg-red-600 px-1.5 py-0.5 rounded text-white whitespace-nowrap">停止中</span>}
-                                        {/* モードバッジ */}
                                         {shop.isQueueMode ? 
                                             <span className="text-[10px] bg-purple-600 px-1.5 py-0.5 rounded text-white whitespace-nowrap">並び順</span> :
                                             <span className="text-[10px] bg-blue-600 px-1.5 py-0.5 rounded text-white whitespace-nowrap">予約制</span>
@@ -531,8 +545,9 @@ export default function SuperAdminPage() {
                             </div>
                         )}
 
-                        {/* ★ ここから条件分岐：予約制 or 順番待ち制 */}
-                        {targetShop.isQueueMode ? (
+                        {/* 条件分岐：予約制 or 順番待ち制 */}
+
+                      {targetShop.isQueueMode ? (
                             // --- 順番待ち制のUI ---
                             <div>
                                 <h3 className="text-lg font-bold mb-4 text-purple-400 border-b border-gray-700 pb-2">📋 待機列リスト (Queue)</h3>
@@ -592,38 +607,52 @@ export default function SuperAdminPage() {
                             <div>
                                 <h3 className="text-lg font-bold mb-4 text-blue-400 border-b border-gray-700 pb-2">📅 予約リスト (Reservations)</h3>
                                 <div className="space-y-4">
-                                    {Object.entries(getReservationsByTime(targetShop)).map(([time, resList]: any) => (
-                                        <div key={time} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-                                            <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
-                                                <h4 className="font-mono text-xl font-bold text-yellow-500">{time}</h4>
-                                                <div className="text-xs text-gray-400">
-                                                    予約: {resList.length}組 / 残り枠: {(targetShop.capacity || 0) - (targetShop.slots?.[time] || 0)}
+                                    {Object.entries(getReservationsByTime(targetShop)).map(([time, resList]: any) => {
+                                        // ★追加: 前半で定義した関数を使って各時間枠の解放状況を判定
+                                        const { isReleased, releaseTimeStr } = checkReleaseStatus(time, targetShop.releaseBeforeTime);
+
+                                        return (
+                                            // ★追加: 未解放の場合はグレーアウト（opacity-50等）を適用
+                                            <div key={time} className={`rounded-lg p-3 border transition ${isReleased ? 'bg-gray-800/50 border-gray-700' : 'bg-gray-900 border-gray-800 opacity-60'}`}>
+                                                <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <h4 className={`font-mono text-xl font-bold ${isReleased ? 'text-yellow-500' : 'text-gray-500'}`}>{time}</h4>
+                                                        {/* ★追加: 未解放の場合は「XX:XX 解放」バッジを表示 */}
+                                                        {!isReleased && (
+                                                            <span className="bg-gray-800 border border-gray-600 text-gray-400 text-[10px] px-2 py-0.5 rounded font-bold">
+                                                                🔒 {releaseTimeStr}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400">
+                                                        予約: {resList.length}組 / 残り枠: {(targetShop.capacity || 0) - (targetShop.slots?.[time] || 0)}
+                                                    </div>
                                                 </div>
+                                                {resList.length === 0 ? (
+                                                    <div className="text-xs text-gray-600 py-1">予約なし</div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        {resList.map((res: any, idx: number) => (
+                                                            <div key={idx} className={`flex justify-between items-center p-2 rounded bg-gray-700 ${res.status === 'used' ? 'opacity-50 grayscale' : ''}`}>
+                                                                <div>
+                                                                    <div className="font-bold font-mono text-sm">{res.userId}</div>
+                                                                    <div className="text-xs text-gray-400">{res.count}名</div>
+                                                                </div>
+                                                                <div className="flex gap-2">
+                                                                    {res.status !== 'used' ? (
+                                                                        <button onClick={() => toggleReservationStatus(targetShop, res, 'used')} className="bg-green-600 text-[10px] px-2 py-1 rounded">入場</button>
+                                                                    ) : (
+                                                                        <button onClick={() => toggleReservationStatus(targetShop, res, 'reserved')} className="bg-gray-500 text-[10px] px-2 py-1 rounded">戻す</button>
+                                                                    )}
+                                                                    <button onClick={() => cancelReservation(targetShop, res)} className="bg-red-900/50 text-red-200 text-[10px] px-2 py-1 rounded border border-red-900">取消</button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                            {resList.length === 0 ? (
-                                                <div className="text-xs text-gray-600 py-1">予約なし</div>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {resList.map((res: any, idx: number) => (
-                                                        <div key={idx} className={`flex justify-between items-center p-2 rounded bg-gray-700 ${res.status === 'used' ? 'opacity-50 grayscale' : ''}`}>
-                                                            <div>
-                                                                <div className="font-bold font-mono text-sm">{res.userId}</div>
-                                                                <div className="text-xs text-gray-400">{res.count}名</div>
-                                                            </div>
-                                                            <div className="flex gap-2">
-                                                                {res.status !== 'used' ? (
-                                                                    <button onClick={() => toggleReservationStatus(targetShop, res, 'used')} className="bg-green-600 text-[10px] px-2 py-1 rounded">入場</button>
-                                                                ) : (
-                                                                    <button onClick={() => toggleReservationStatus(targetShop, res, 'reserved')} className="bg-gray-500 text-[10px] px-2 py-1 rounded">戻す</button>
-                                                                )}
-                                                                <button onClick={() => cancelReservation(targetShop, res)} className="bg-red-900/50 text-red-200 text-[10px] px-2 py-1 rounded border border-red-900">取消</button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
