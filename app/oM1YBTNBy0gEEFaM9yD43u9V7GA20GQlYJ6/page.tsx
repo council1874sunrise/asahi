@@ -57,6 +57,10 @@ export default function AdminPage() {
   // 検索用
   const [searchUserId, setSearchUserId] = useState("");
 
+  // ★追加: ゲスト枠モーダル用ステート（時間予約制用）
+  const [showGuestModal, setShowGuestModal] = useState(false);
+  const [guestSelectedTime, setGuestSelectedTime] = useState("");
+
   useEffect(() => {
     signInAnonymously(auth).catch((e) => console.error(e));
     
@@ -297,7 +301,7 @@ export default function AdminPage() {
       });
   };
 
-  // --- ★追加: 順番待ち操作関連 (Queue System) ---
+  // --- 順番待ち操作関連 (Queue System) ---
   const handleQueueAction = async (shop: any, ticket: any, action: "call" | "enter" | "cancel") => {
       if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
 
@@ -324,6 +328,76 @@ export default function AdminPage() {
       await updateDoc(doc(db, "attractions", shop.id), {
           queue: updatedQueue
       });
+  };
+
+  // --- ★追加: ゲスト枠追加ロジック ---
+  const generateGuestId = (shop: any) => {
+      let maxGId = 0;
+      // 予約リストと待機列の両方から G から始まるIDを探す
+      const allUsers = [
+          ...(shop.reservations || []).map((r: any) => r.userId),
+          ...(shop.queue || []).map((q: any) => q.userId)
+      ];
+      allUsers.forEach((id: string) => {
+          if (id && typeof id === 'string' && id.startsWith("G")) {
+              const numStr = id.substring(1);
+              const num = parseInt(numStr, 10);
+              if (!isNaN(num) && num > maxGId) {
+                  maxGId = num;
+              }
+          }
+      });
+      // 既存の最大値に+1して、5桁ゼロ埋め
+      const nextNum = maxGId + 1;
+      return "G" + nextNum.toString().padStart(5, "0");
+  };
+
+  const handleAddGuest = async (shop: any, timeSlot?: string) => {
+      if (isUserBlacklisted(shop) || isUserNotWhitelisted(shop)) return;
+
+      const guestId = generateGuestId(shop);
+      
+      if (shop.isQueueMode) {
+          // 🚶‍♂️ 順番待ち制の場合
+          if (!confirm(`ゲスト枠（${guestId}）を待機列の最後尾に追加しますか？`)) return;
+          const newTicket = {
+              userId: guestId,
+              ticketId: guestId,
+              status: "waiting",
+              timestamp: Date.now(),
+              groupSize: "X", // 一般と区別するために "X" を設定
+              isGuest: true
+          };
+          const updatedQueue = [...(shop.queue || []), newTicket];
+          await updateDoc(doc(db, "attractions", shop.id), { queue: updatedQueue });
+          alert(`✅ ${guestId}を待機列に追加しました。\n現場のメモに番号を控えてお渡しください。`);
+      } else {
+          // 📅 時間予約制の場合
+          if (!timeSlot) return alert("時間を指定してください。");
+          if (!confirm(`ゲスト枠（${guestId}）を ${timeSlot} の枠に追加しますか？`)) return;
+          
+          const newReservation = {
+              userId: guestId,
+              time: timeSlot,
+              status: "reserved",
+              timestamp: Date.now(),
+              groupSize: "X", // 一般と区別するために "X" を設定
+              isGuest: true
+          };
+          
+          // 枠を1つ減らす（＝予約数を1つ増やす）
+          const currentSlots = shop.slots || {};
+          const currentCount = currentSlots[timeSlot] || 0;
+          const updatedSlots = { ...currentSlots, [timeSlot]: currentCount + 1 };
+          
+          await updateDoc(doc(db, "attractions", shop.id), {
+              reservations: [...(shop.reservations || []), newReservation],
+              slots: updatedSlots
+          });
+          alert(`✅ ${guestId}を ${timeSlot} に追加しました。\n現場のメモに番号と時間を控えてお渡しください。`);
+          setShowGuestModal(false);
+          setGuestSelectedTime("");
+      }
   };
 
   // --- 表示用ヘルパー ---
@@ -609,7 +683,7 @@ export default function AdminPage() {
             </div>
         )}
 
-        {/* 2. 詳細モード（会場が選択された時） */}
+{/* 2. 詳細モード（会場が選択された時） */}
         {expandedShopId && targetShop && (
             <div className="animate-fade-in">
                 {/* 戻るヘッダー */}
@@ -675,7 +749,7 @@ export default function AdminPage() {
                                     <div className="p-8 text-center text-gray-500">現在の待機列はありません</div>
                                 ) : (
                                     <div className="divide-y divide-gray-700">
-                                        {/* ヘッダー行 (スマホでは非表示にしてCard形式にする手もあるが、今回はリスト風) */}
+                                        {/* ヘッダー行 */}
                                         <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs text-gray-400 font-bold bg-gray-800">
                                             <div className="col-span-1">No.</div>
                                             <div className="col-span-3">Ticket / User</div>
