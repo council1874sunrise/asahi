@@ -6,10 +6,12 @@ import { getAuth } from "firebase/auth";
 const firebaseConfig = {
   apiKey: "AIzaSyDHg5b8fdTjbvUwjyyj2V85gCilPTlb8aQ",
   authDomain: "asahi-f7189.firebaseapp.com",
+  databaseURL: "https://asahi-f7189-default-rtdb.firebaseio.com",
   projectId: "asahi-f7189",
   storageBucket: "asahi-f7189.firebasestorage.app",
   messagingSenderId: "838314272930",
-  appId: "1:838314272930:web:d04153d9fe6f3aa152cffb"
+  appId: "1:838314272930:web:d04153d9fe6f3aa152cffb",
+  measurementId: "G-DP81ZEFDNF"
 };
 
 // ↑↑ ここまで ↑↑
