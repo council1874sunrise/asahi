@@ -708,6 +708,13 @@ export default function SuperAdminPage() {
 
               <div className="flex gap-2">
                 <button onClick={handleSave} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-3 rounded font-bold transition shadow-lg shadow-blue-900/40">変更を保存</button>
+                                <button
+                  onClick={() => handleRegenerateSlots(attractions.find(s => s.id === originalId))}
+                  className="bg-yellow-700 hover:bg-yellow-600 text-white px-4 rounded text-xs font-bold transition border border-yellow-600"
+                  title="予約データは消さず、枠の区切りだけを現在の設定で作り直します"
+                >
+                  ⏱️ 枠を再生成
+                </button>
                 <button onClick={resetForm} className="bg-gray-700 hover:bg-gray-600 px-6 rounded text-sm transition border border-gray-600">キャンセル</button>
               </div>
             </div>
