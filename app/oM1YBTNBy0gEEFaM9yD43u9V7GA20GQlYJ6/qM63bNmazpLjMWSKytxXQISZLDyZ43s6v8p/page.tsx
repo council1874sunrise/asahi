@@ -395,39 +395,10 @@ export default function SuperAdminPage() {
           slots = currentShop.slots || {}; shouldResetSlots = false;
         } else {
           if (!isQueueMode && !confirm("時間を変更すると、現在の予約枠がリセットされます。よろしいですか？")) return;
-          
         }
       }
     }
-  // ★追加: slotsだけを duration に基づいて完全に作り直す（reservationsは消さない）
-  const handleRegenerateSlots = async (shop: any) => {
-    if (!confirm(`「${shop.name}」の予約枠を、現在の設定（${shop.openTime}〜${shop.closeTime} / ${shop.duration}分刻み）で作り直しますか？\n予約データ自体は消えませんが、枠の区切りが変わります。`)) return;
 
-    // 1. slotsを完全に削除して作り直す
-    let current = new Date(`2000/01/01 ${shop.openTime}`);
-    const end = new Date(`2000/01/01 ${shop.closeTime}`);
-    let newSlots: any = {};
-    while (current < end) {
-      const timeStr = current.toTimeString().substring(0, 5);
-      newSlots[timeStr] = 0;
-      current.setMinutes(current.getMinutes() + shop.duration);
-    }
-
-    // 2. 既存の予約が新しい枠に無い時間なら、その時間も枠として残す
-    (shop.reservations || []).forEach((res: any) => {
-      if (!Object.prototype.hasOwnProperty.call(newSlots, res.time)) newSlots[res.time] = 0;
-    });
-
-    // 3. 予約件数を数え直して反映
-    (shop.reservations || []).forEach((res: any) => {
-      newSlots[res.time] = (newSlots[res.time] || 0) + 1;
-    });
-
-    try {
-      await updateDoc(doc(db, "attractions", shop.id), { slots: newSlots });
-      alert("枠を再生成しました。");
-    } catch (e) { alert("エラーが発生しました。"); }
-  };
     if (shouldResetSlots) {
       let current = new Date(`2000/01/01 ${openTime}`);
       const end = new Date(`2000/01/01 ${closeTime}`);
@@ -437,9 +408,6 @@ export default function SuperAdminPage() {
         slots = { ...slots, [timeStr]: 0 };
         current.setMinutes(current.getMinutes() + duration);
       }
-            existingReservations.forEach((res: any) => {
-        if (!Object.prototype.hasOwnProperty.call(slots, res.time)) { slots[res.time] = 0; }
-      });
     }
 
     const data: any = {
@@ -708,13 +676,6 @@ export default function SuperAdminPage() {
 
               <div className="flex gap-2">
                 <button onClick={handleSave} className="flex-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 py-3 rounded font-bold transition shadow-lg shadow-blue-900/40">変更を保存</button>
-                                <button
-                  onClick={() => handleRegenerateSlots(attractions.find(s => s.id === originalId))}
-                  className="bg-yellow-700 hover:bg-yellow-600 text-white px-4 rounded text-xs font-bold transition border border-yellow-600"
-                  title="予約データは消さず、枠の区切りだけを現在の設定で作り直します"
-                >
-                  ⏱️ 枠を再生成
-                </button>
                 <button onClick={resetForm} className="bg-gray-700 hover:bg-gray-600 px-6 rounded text-sm transition border border-gray-600">キャンセル</button>
               </div>
             </div>
@@ -1069,3 +1030,4 @@ export default function SuperAdminPage() {
     </div>
   );
 }
+
