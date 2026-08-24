@@ -352,7 +352,7 @@ export default function SuperAdminPage() {
       await Promise.all(userIds.map(id => deleteDoc(doc(db, "users", id))));
       if (shopIds.includes(expandedShopId || "")) setExpandedShopId(null);
       setPendingDestroyTargets(null);
-      alert(`選択した ${shopIds.length}件の会場・${userIds.length}件のUIDを削除しました。`);
+      alert(`選択した shopIds.length件の会場・{userIds.length}件のUIDを削除しました。`);
     } catch (e) { alert("エラーが発生しました。"); }
   };
 
@@ -408,6 +408,9 @@ export default function SuperAdminPage() {
         slots = { ...slots, [timeStr]: 0 };
         current.setMinutes(current.getMinutes() + duration);
       }
+           existingReservations.forEach((res: any) => {
+        if (Object.prototype.hasOwnProperty.call(slots, res.time)) { slots[res.time] = (slots[res.time] || 0) + 1; }
+      });
     }
 
     const data: any = {
@@ -420,7 +423,7 @@ export default function SuperAdminPage() {
 
     try {
       if (isEditing && originalId && manualId !== originalId) {
-        if (!confirm(`会場IDを「${originalId}」から「${manualId}」に変更しますか？`)) return;
+        if (!confirm(`会場IDを「originalId」から「{manualId}」に変更しますか？`)) return;
         await setDoc(doc(db, "attractions", manualId), data);
         await deleteDoc(doc(db, "attractions", originalId));
         setExpandedShopId(manualId);
@@ -551,7 +554,7 @@ export default function SuperAdminPage() {
     const releaseDate = new Date(slotDate.getTime() - (relH * 60 + relM) * 60000);
     return {
       isReleased: now >= releaseDate,
-      releaseTimeStr: `${String(releaseDate.getHours()).padStart(2, '0')}:${String(releaseDate.getMinutes()).padStart(2, '0')} 解放`,
+      releaseTimeStr: `String(releaseDate.getHours()).padStart(2,'0'):{String(releaseDate.getMinutes()).padStart(2, '0')} 解放`,
     };
   };
 
