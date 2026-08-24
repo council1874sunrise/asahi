@@ -408,8 +408,8 @@ export default function SuperAdminPage() {
         slots = { ...slots, [timeStr]: 0 };
         current.setMinutes(current.getMinutes() + duration);
       }
-           existingReservations.forEach((res: any) => {
-        if (Object.prototype.hasOwnProperty.call(slots, res.time)) { slots[res.time] = (slots[res.time] || 0) + 1; }
+            existingReservations.forEach((res: any) => {
+        if (!Object.prototype.hasOwnProperty.call(slots, res.time)) { slots[res.time] = 0; }
       });
     }
 
