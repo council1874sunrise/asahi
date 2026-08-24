@@ -395,7 +395,11 @@ export default function SuperAdminPage() {
           slots = currentShop.slots || {}; shouldResetSlots = false;
         } else {
           if (!isQueueMode && !confirm("時間を変更すると、現在の予約枠がリセットされます。よろしいですか？")) return;
-            // ★追加: slotsだけを duration に基づいて完全に作り直す（reservationsは消さない）
+          
+        }
+      }
+    }
+  // ★追加: slotsだけを duration に基づいて完全に作り直す（reservationsは消さない）
   const handleRegenerateSlots = async (shop: any) => {
     if (!confirm(`「${shop.name}」の予約枠を、現在の設定（${shop.openTime}〜${shop.closeTime} / ${shop.duration}分刻み）で作り直しますか？\n予約データ自体は消えませんが、枠の区切りが変わります。`)) return;
 
@@ -424,10 +428,6 @@ export default function SuperAdminPage() {
       alert("枠を再生成しました。");
     } catch (e) { alert("エラーが発生しました。"); }
   };
-        }
-      }
-    }
-
     if (shouldResetSlots) {
       let current = new Date(`2000/01/01 ${openTime}`);
       const end = new Date(`2000/01/01 ${closeTime}`);
