@@ -1,7 +1,8 @@
+// app/page.tsx
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
-import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, Timestamp, runTransaction } from "firebase/firestore";
 import { signInAnonymously } from "firebase/auth";
 import { QrReader } from 'react-qr-reader';
 
@@ -239,22 +240,29 @@ export default function Home() {
 
     try {
       const shopRef = doc(db, "attractions", selectedShop.id);
+
       if (draftBooking.mode === "slot") {
-        const latestSnap = await getDoc(shopRef);
-        const latestData = latestSnap.data();
-        const currentCount = latestData?.slots?.[draftBooking.time] || 0;
-        const limitGroups = latestData?.capacity || 0;
+        await runTransaction(db, async (transaction) => {
+          const shopDoc = await transaction.get(shopRef);
+          if (!shopDoc.exists()) {
+            throw new Error("NOT_FOUND");
+          }
 
-        if (currentCount >= limitGroups) {
-          setBookingFailed(true);
-          return;
-        }
+          const latestData = shopDoc.data();
+          const currentCount = latestData?.slots?.[draftBooking.time] || 0;
+          const limitGroups = latestData?.capacity || 0;
 
-        const timestamp = Date.now();
-        const reservationData = { userId, time: draftBooking.time, timestamp, status: "reserved", count: peopleCount };
-        await updateDoc(shopRef, { 
-          [`slots.${draftBooking.time}`]: increment(1),
-          reservations: arrayUnion(reservationData)
+          if (currentCount >= limitGroups) {
+            throw new Error("FULL");
+          }
+
+          const timestamp = Date.now();
+          const reservationData = { userId, time: draftBooking.time, timestamp, status: "reserved", count: peopleCount };
+
+          transaction.update(shopRef, { 
+            [`slots.${draftBooking.time}`]: currentCount + 1,
+            reservations: arrayUnion(reservationData)
+          });
         });
       } else {
         const shopSnap = await getDoc(shopRef);
@@ -271,13 +279,13 @@ export default function Home() {
         await updateDoc(shopRef, { queue: arrayUnion(queueData) });
         alert(`発券しました！\n番号: ${nextTicketId}`);
       }
+
       setDraftBooking(null);
       setSelectedShop(null);
       setBookingFailed(false);
     } catch (e: any) { 
-      console.error(e);
-      // ★ ここが変更点: Firebaseのセキュリティルール等で拒否された場合は予約失敗画面を表示
-      if (e.code === 'permission-denied' || (e.message && e.message.includes('permission-denied'))) {
+      console.error("Booking error:", e);
+      if (e.message === "FULL" || e.code === 'permission-denied' || (e.message && e.message.includes('permission-denied'))) {
         setBookingFailed(true);
       } else {
         alert("エラーが発生しました。もう一度お試しください。"); 
@@ -748,7 +756,7 @@ export default function Home() {
 
                         if (currentTime < releaseDate) {
                           isLocked = true;
-                          releaseTimeStr = `String(releaseDate.getHours()).padStart(2,'0'):{String(releaseDate.getMinutes()).padStart(2, '0')} 解放`;
+                          releaseTimeStr = `${String(releaseDate.getHours()).padStart(2,'0')}:${String(releaseDate.getMinutes()).padStart(2, '0')} 解放`;
                         }
                       }
 
