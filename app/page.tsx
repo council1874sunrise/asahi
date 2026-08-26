@@ -1,4 +1,3 @@
-// app/page.tsx
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
@@ -41,11 +40,11 @@ export default function Home() {
   const [userId, setUserId] = useState("");
   const [isBanned, setIsBanned] = useState(false);
 
-  // ★検索・絞り込み用のステート
+  // 検索・絞り込み用のステート
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagSearchMode, setTagSearchMode] = useState<"AND" | "OR">("OR");
-  // ★検索パネルの開閉ステート
+  // 検索パネルの開閉ステート
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
 
   const [enableSound, setEnableSound] = useState(false);
@@ -275,9 +274,14 @@ export default function Home() {
       setDraftBooking(null);
       setSelectedShop(null);
       setBookingFailed(false);
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
-      alert("エラーが発生しました。もう一度お試しください。"); 
+      // ★ ここが変更点: Firebaseのセキュリティルール等で拒否された場合は予約失敗画面を表示
+      if (e.code === 'permission-denied' || (e.message && e.message.includes('permission-denied'))) {
+        setBookingFailed(true);
+      } else {
+        alert("エラーが発生しました。もう一度お試しください。"); 
+      }
     }
   };
 
@@ -353,7 +357,6 @@ export default function Home() {
 
   const allTags = Array.from(new Set(attractions.flatMap(a => a.tags || [])));
   
-  // ★リストには未選択のタグのみを表示し、選択したものは上のピルに移動させる
   const unselectedTags = allTags.filter(tag => !selectedTags.includes(tag));
 
   const filteredAttractions = attractions
@@ -523,10 +526,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* ★刷新された検索・絞り込みパネル */}
       {!selectedShop && (
         <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border">
-          {/* 展開トグル */}
           <div 
             className="flex justify-between items-center cursor-pointer"
             onClick={() => setIsSearchExpanded(!isSearchExpanded)}
@@ -539,7 +540,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 閉じている時の選択中タグ・検索ワード表示 */}
           {!isSearchExpanded && (selectedTags.length > 0 || searchQuery) && (
             <div className="mt-3 flex flex-wrap gap-1">
               {searchQuery && (
@@ -555,10 +555,8 @@ export default function Home() {
             </div>
           )}
 
-          {/* 展開時の内容 */}
           {isSearchExpanded && (
             <div className="space-y-4 pt-4 mt-3 border-t">
-              {/* フリーワード検索 */}
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-1">フリーワード検索</label>
                 <input 
@@ -570,7 +568,6 @@ export default function Home() {
                 />
               </div>
               
-              {/* ハッシュタグ絞り込み */}
               {allTags.length > 0 && (
                 <div>
                   <div className="flex justify-between items-center mb-2">
@@ -601,7 +598,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* ★展開中の選択中タグ表示（タップで解除可能に） */}
                   {selectedTags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-3">
                       {selectedTags.map(tag => (
@@ -616,7 +612,6 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* ★1行に1つ、右端にチェックボックスのリスト（未選択のみ表示） */}
                   {unselectedTags.length > 0 && (
                     <div className="max-h-60 overflow-y-auto border rounded-lg p-2 bg-gray-50 flex flex-col gap-2">
                       {unselectedTags.map(tag => (
@@ -870,5 +865,3 @@ export default function Home() {
     </div>
   );
 }
-
-
