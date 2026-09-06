@@ -1,4 +1,14 @@
+// #呼び出し番号表示画面 (app/signage/page.tsx)
+"use client";
+import { useState, useEffect, useRef } from "react";
+import { db, auth } from "../../../firebase";
+import { collection, onSnapshot } from "firebase/firestore";
+import { signInAnonymously } from "firebase/auth";
 
+// ─────────────────────────────────────────
+// 型
+// ─────────────────────────────────────────
+type Ticket = {
   ticketId: string;
   userId: string;
   count: number;
@@ -516,3 +526,338 @@ function SignageScreen({
               </div>
             )}
           </div>
+
+          {/* ════════════════════════════════
+              右エリア: 呼び出し中 (40%)
+          ════════════════════════════════ */}
+          <div
+            style={{
+              flex: "0 0 40%",
+              display: "flex",
+              flexDirection: "column",
+              padding: "48px 56px",
+              minWidth: 0,
+              background: calledTickets.length > 0 ? "#fff0f0" : "transparent",
+              position: "relative",
+            }}
+          >
+            {/* 呼び出し中のとき背景パルス */}
+            {calledTickets.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "radial-gradient(ellipse at 50% 30%, rgba(229,57,53,0.06) 0%, transparent 70%)",
+                  pointerEvents: "none",
+                  transition: `opacity ${BLINK_INTERVAL}ms ease`,
+                  opacity: blinkOn ? 1 : 0,
+                }}
+              />
+            )}
+
+            {/* セクションラベル */}
+            <div
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                letterSpacing: "0.3em",
+                textTransform: "uppercase",
+                marginBottom: 40,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                color: calledTickets.length > 0 ? "#e53935" : "#bbb",
+              }}
+            >
+              <div
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  background:
+                    calledTickets.length > 0
+                      ? blinkOn
+                        ? "#e53935"
+                        : "#ffb3b3"
+                      : "#ccc",
+                  transition: `background ${BLINK_INTERVAL}ms ease`,
+                }}
+              />
+              呼び出し中
+              {calledTickets.length > 0 && (
+                <span
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 400,
+                    color: "#e53935",
+                    letterSpacing: "0.05em",
+                    marginLeft: 8,
+                  }}
+                >
+                  {calledTickets.length}組
+                </span>
+              )}
+            </div>
+
+            {/* 呼び出しリスト */}
+            {calledTickets.length === 0 ? (
+              <div
+                style={{
+                  flex: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ddd",
+                  fontSize: 36,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                }}
+              >
+                — 呼び出しなし —
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 28,
+                  overflow: "hidden",
+                }}
+              >
+                {calledTickets.map((ticket) => (
+                  <CalledCard
+                    key={ticket.ticketId}
+                    ticket={ticket}
+                    blinkOn={blinkOn}
+                    label={labelOf(ticket)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── フッター ── */}
+        <div
+          style={{
+            height: 48,
+            background: "#f0f0f0",
+            borderTop: "1px solid #ddd",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 32,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ fontSize: 16, color: "#999", letterSpacing: "0.2em" }}>
+            QUEUE DISPLAY SYSTEM
+          </div>
+          <div
+            style={{
+              width: 4,
+              height: 4,
+              borderRadius: "50%",
+              background: "#ccc",
+            }}
+          />
+          <div style={{ fontSize: 16, color: "#999", fontFamily: "monospace" }}>
+            {shop.id}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// 準備中カード
+// ─────────────────────────────────────────
+function WaitingCard({
+  ticket,
+  index,
+  label,
+}: {
+  ticket: Ticket;
+  index: number;
+  label: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#fafafa",
+        border: "1px solid #f0f0f0",
+        borderRadius: 16,
+        padding: "24px 28px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        minWidth: 0,
+      }}
+    >
+      {/* 順番 */}
+      <div
+        style={{
+          fontSize: 24,
+          fontWeight: 900,
+          color: "#999",
+          fontVariantNumeric: "tabular-nums",
+          flexShrink: 0,
+          width: 40,
+          textAlign: "center",
+        }}
+      >
+        {index + 1}
+      </div>
+
+      {/* ID */}
+      <div
+        style={{
+          fontSize: 56,
+          fontWeight: 900,
+          color: "#222",
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "0.04em",
+          lineHeight: 1,
+          fontFamily: "'Noto Sans JP', 'Yu Gothic', sans-serif",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </div>
+
+      {/* 人数 */}
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color: "#555",
+          flexShrink: 0,
+          textAlign: "right",
+          lineHeight: 1.2,
+        }}
+      >
+        {ticket.count}
+        <span style={{ fontSize: 14, display: "block" }}>名</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// 呼び出し中カード
+// ─────────────────────────────────────────
+function CalledCard({
+  ticket,
+  blinkOn,
+  label,
+}: {
+  ticket: Ticket;
+  blinkOn: boolean;
+  label: string;
+}) {
+  return (
+    <div
+      style={{
+        background: "#fff5f5",
+        border: `2px solid ${blinkOn ? "#e53935" : "#ffcdd2"}`,
+        borderRadius: 20,
+        padding: "36px 40px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        position: "relative",
+        overflow: "hidden",
+        transition: `border-color ${BLINK_INTERVAL}ms ease`,
+      }}
+    >
+      {/* 上部ラベル */}
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          letterSpacing: "0.3em",
+          color: blinkOn ? "#d32f2f" : "#ff9999",
+          transition: `color ${BLINK_INTERVAL}ms ease`,
+          textTransform: "uppercase",
+        }}
+      >
+        ▶ お越しください
+      </div>
+
+      {/* 大ID */}
+      <div
+        style={{
+          fontSize: 72,
+          fontWeight: 900,
+          lineHeight: 1,
+          letterSpacing: "0.04em",
+          color: blinkOn ? "#d97706" : "#fcd34d",
+          transition: `color ${BLINK_INTERVAL}ms ease`,
+          fontVariantNumeric: "tabular-nums",
+          fontFamily: "'Noto Sans JP', 'Yu Gothic', sans-serif",
+          textAlign: "center",
+          wordBreak: "break-all",
+        }}
+      >
+        {label}
+      </div>
+
+      {/* 人数 */}
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          color: "#777",
+        }}
+      >
+        {ticket.count}名
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// メインコンポーネント
+// ─────────────────────────────────────────
+export default function SignagePage() {
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
+
+  useEffect(() => {
+    signInAnonymously(auth).catch(console.error);
+
+    const unsub = onSnapshot(collection(db, "attractions"), (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Shop));
+      setShops(all);
+
+      // 選択中の会場データをリアルタイム更新
+      setSelectedShop((prev) => {
+        if (!prev) return null;
+        const updated = all.find((s) => s.id === prev.id);
+        return updated ?? prev;
+      });
+    });
+
+    return () => unsub();
+  }, []);
+
+  if (selectedShop) {
+    return (
+      <SignageScreen
+        shop={selectedShop}
+        onBack={() => setSelectedShop(null)}
+      />
+    );
+  }
+
+  return <ShopSelectScreen shops={shops} onSelect={setSelectedShop} />;
+}
+
