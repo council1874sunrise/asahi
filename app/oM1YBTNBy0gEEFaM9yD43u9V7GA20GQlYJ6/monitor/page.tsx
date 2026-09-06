@@ -461,7 +461,7 @@ function SignageScreen({
             {/* セクションラベル */}
             <div
               style={{
-                fontSize: 28,
+                fontSize: 42, // 1.5倍 (28 -> 42)
                 fontWeight: 700,
                 color: "#666",
                 letterSpacing: "0.3em",
@@ -474,8 +474,8 @@ function SignageScreen({
             >
               <div
                 style={{
-                  width: 10,
-                  height: 10,
+                  width: 15, // 文字サイズに合わせて少し大きく
+                  height: 15,
                   borderRadius: "50%",
                   background: "#2a7de1",
                 }}
@@ -483,7 +483,7 @@ function SignageScreen({
               準備中
               <span
                 style={{
-                  fontSize: 22,
+                  fontSize: 33, // 1.5倍 (22 -> 33)
                   fontWeight: 400,
                   color: "#000",
                   letterSpacing: "0.05em",
