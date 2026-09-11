@@ -42,7 +42,7 @@ export default function Footer() {
           　制作者名 <span className="font-bold text-gray-700">恥ずかしいので伏せさせていただく☆</span>
           </p>
 
-          <p className="font-sans text-gray-700 text-[14px] font-bold tracking-wide">
+          <p className="font-sans text-gray-700 text-[7px] font-bold tracking-wide">
            製作者として何年使用しどの程度の効果を発揮しするのかわからない。
             多くの人を助けられることを切に願っている。
             良い一日になりますように
