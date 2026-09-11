@@ -42,7 +42,7 @@ export default function Footer() {
 
           {/* 隠しメッセージ（文字サイズを10pxに調整） */}
           <p className="font-sans text-gray-700 text-[10px] font-bold tracking-wide pt-4">
-            製作者として何年使用しどの程度の効果を発揮するのかわからない。<br />
+            製作者として何年使用し、どの程度の効果を発揮するのかわからない。<br />
             多くの人を助けられることを切に願っている。<br />
             良い一日になりますように
           </p>
