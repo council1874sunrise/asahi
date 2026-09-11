@@ -212,7 +212,7 @@ export default function Home() {
   }
 
   const handleSelectTime = (shop: any, time: string) => {
-    if (activeTickets.length >= 3) return alert("チケットは3枚までです。");
+    if (activeTickets.length >= 1) return alert("チケットは1枚までです。");
     if (activeTickets.some(t => t.shopId === shop.id && t.time === time)) return alert("既に予約済みです。");
     const limitGroups = shop.capacity || 0; 
     const current = shop.slots[time] || 0;
@@ -226,7 +226,7 @@ export default function Home() {
   };
 
   const handleJoinQueue = (shop: any) => {
-    if (activeTickets.length >= 3) return alert("チケットは3枚までです。");
+    if (activeTickets.length >= 1) return alert("チケットは1枚までです。");
     if (activeTickets.some(t => t.shopId === shop.id)) return alert("既にこの店に並んでいます。");
     if (shop.isPaused) return alert("停止中です。");
     const maxPeople = shop.groupLimit || 10;
@@ -458,8 +458,8 @@ export default function Home() {
             <h1 className="text-xl font-bold text-blue-900">予約・整理券</h1>
           </div>
           <div className="flex items-center gap-2">
-            <div className={`px-3 py-1 rounded-full text-sm font-bold ${activeTickets.length >= 3 ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
-              {activeTickets.length}/3枚
+            <div className={`px-3 py-1 rounded-full text-sm font-bold ${activeTickets.length >= 1 ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+              {activeTickets.length}/1枚
             </div>
           </div>
         </div>
@@ -939,4 +939,5 @@ export default function Home() {
     </div>
   );
 }
+
 
